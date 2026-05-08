@@ -1,0 +1,274 @@
+@import './styles/design-system.css';
+
+.app-shell {
+  min-height: 100svh;
+  background:
+    linear-gradient(135deg, rgba(228, 246, 243, 0.72), rgba(255, 245, 231, 0.68)),
+    var(--tt-surface);
+}
+
+.app-hero {
+  display: grid;
+  gap: 1rem;
+  width: min(100% - 1.5rem, 72rem);
+  margin: 1rem auto;
+  padding: 1rem;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--tt-shadow);
+  text-align: left;
+}
+
+.app-hero h2 {
+  margin: 0;
+  color: var(--tt-dark);
+  font-size: clamp(1.35rem, 4vw, 2.35rem);
+  line-height: 1.08;
+}
+
+.app-hero p {
+  max-width: 52rem;
+  margin: 0.65rem 0 0;
+  color: var(--tt-muted);
+}
+
+.app-hero__label {
+  margin: 0 0 0.45rem;
+  color: var(--tt-orange);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.app-hero__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.app-hero__stats div {
+  display: grid;
+  gap: 0.15rem;
+  align-content: center;
+  min-height: 5rem;
+  padding: 0.75rem;
+  border-radius: var(--tt-radius);
+  background: var(--tt-soft-teal);
+}
+
+.app-hero__stats strong {
+  color: var(--tt-dark);
+  font-size: clamp(1.45rem, 5vw, 2.25rem);
+  line-height: 1;
+}
+
+.app-hero__stats span {
+  color: #145d55;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.app-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100% - 1.5rem, 42rem);
+  margin: 0 auto 1rem;
+  padding: 0.25rem;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: var(--tt-white);
+  box-shadow: var(--tt-shadow);
+}
+
+.app-tabs__button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: var(--tt-radius-sm);
+  background: transparent;
+  color: var(--tt-muted);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.app-tabs__button[data-active='true'] {
+  background: var(--tt-soft-yellow);
+  color: var(--tt-dark);
+}
+
+.app-content {
+  width: min(100% - 1.5rem, 72rem);
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.app-content main,
+.scenario-coach,
+.plan-view {
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--tt-shadow);
+  color: var(--tt-dark);
+  padding: 1rem;
+  text-align: left;
+}
+
+.app-content h1,
+.app-content h2,
+.app-content h3 {
+  color: var(--tt-dark);
+  letter-spacing: 0;
+}
+
+.app-content button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-orange);
+  color: var(--tt-white);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0.65rem 0.9rem;
+}
+
+.app-content button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.app-content textarea,
+.app-content input,
+.app-content select,
+.login-panel input {
+  max-width: 100%;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  padding: 0.65rem;
+}
+
+.login-panel {
+  display: grid;
+  gap: 1rem;
+  width: min(100% - 1.5rem, 28rem);
+  margin: 8svh auto 0;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--tt-shadow);
+  color: var(--tt-dark);
+  padding: 1.25rem;
+  text-align: left;
+}
+
+.login-panel form,
+.login-panel label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.login-panel button,
+.logout-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-orange);
+  color: var(--tt-white);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0.65rem 0.9rem;
+}
+
+.logout-button {
+  width: min(100% - 1.5rem, 16rem);
+  margin: 0 auto 1rem;
+}
+
+.scenario-coach form {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.scenario-coach textarea {
+  width: 100%;
+  min-height: 8rem;
+}
+
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-table-wrap table {
+  min-width: 42rem;
+}
+
+.plan-columns {
+  display: grid;
+  gap: 1rem;
+}
+
+.plan-card {
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  padding: 1rem;
+}
+
+.plan-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.plan-card ol {
+  display: grid;
+  gap: 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.plan-card li {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.plan-card small {
+  color: var(--tt-muted);
+  font-weight: 700;
+}
+
+@media (min-width: 48rem) {
+  .app-hero {
+    grid-template-columns: minmax(0, 1.8fr) minmax(20rem, 0.8fr);
+    padding: 1.25rem;
+  }
+
+  .plan-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 36rem) {
+  .app-hero__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .app-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-content main,
+  .scenario-coach,
+  .plan-view {
+    padding: 0.85rem;
+  }
+}
