@@ -1,6 +1,7 @@
 import { createApp } from './app';
 
 const port = Number(process.env.API_PORT ?? 5174);
+const host = process.env.API_HOST ?? '127.0.0.1';
 const databaseUrl = process.env.DATABASE_URL ?? 'postgresql:///think_training_mvp';
 const adminEmail = process.env.ADMIN_EMAIL;
 const adminPassword = process.env.ADMIN_PASSWORD;
@@ -19,8 +20,8 @@ const handle = await createApp({
   sessionTtlHours: Number(process.env.SESSION_TTL_HOURS ?? 12),
 });
 
-const server = handle.app.listen(port, '127.0.0.1', () => {
-  console.log(`Think Together API listening on http://127.0.0.1:${port}`);
+const server = handle.app.listen(port, host, () => {
+  console.log(`Think Together API listening on http://${host}:${port}`);
 });
 
 function shutdown() {
