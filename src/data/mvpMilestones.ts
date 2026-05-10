@@ -36,7 +36,8 @@ export const mvpMilestones: readonly MvpMilestone[] = [
     acceptanceCriteria:
       'All shared files are indexed with page/slide refs; ambiguous answers flagged for human review; content version recorded',
     dependencies: 'M1; source artifacts',
-    notes: 'Use current files as v0.1 content package',
+    notes:
+      'Use current files as v0.1 content package: SOP_Program Induction.pdf; SOP_Site Lead Onboarding.pdf; KNOWLEDGE CHECK_Back to School 2025.pdf; PBIS PPT Master.pptx; FINAL - PBIS EC2 - updated 11.4.25.pptx; PBIS part 3 PPT Template.pptx',
   },
   {
     phase: 'MVP',
@@ -224,7 +225,7 @@ export const mvpMilestones: readonly MvpMilestone[] = [
     acceptanceCriteria:
       'Site Leads can complete SLO cycle tracking; supervisors see status and makeup needs',
     dependencies: 'MVP learner/admin foundations',
-    notes: 'Use SLO SOP as source',
+    notes: 'Use SOP_Site Lead Onboarding.pdf as source',
   },
   {
     phase: 'Phase 2',

@@ -18,13 +18,33 @@ import type {
 
 export const CONTENT_VERSION = 'pbis-mvp-2026-05-08'
 
-const pbisDeckRef = (locator: string): SourceRef => ({
-  artifact: 'Program Induction PBIS deck',
+const programInductionSopRef = (locator: string): SourceRef => ({
+  artifact: 'SOP_Program Induction.pdf',
   locator,
 })
 
-const behaviorDeckRef = (locator: string): SourceRef => ({
-  artifact: 'PBIS behavior response scenarios deck',
+const siteLeadSopRef = (locator: string): SourceRef => ({
+  artifact: 'SOP_Site Lead Onboarding.pdf',
+  locator,
+})
+
+const knowledgeCheckRef = (locator: string): SourceRef => ({
+  artifact: 'KNOWLEDGE CHECK_Back to School 2025.pdf',
+  locator,
+})
+
+const pbisMasterRef = (locator: string): SourceRef => ({
+  artifact: 'PBIS PPT Master.pptx',
+  locator,
+})
+
+const pbisEc2Ref = (locator: string): SourceRef => ({
+  artifact: 'FINAL - PBIS EC2 - updated 11.4.25.pptx',
+  locator,
+})
+
+const pbisPart3Ref = (locator: string): SourceRef => ({
+  artifact: 'PBIS part 3 PPT Template.pptx',
   locator,
 })
 
@@ -40,7 +60,11 @@ const modules: Module[] = [
       summary: 'PBIS is a proactive framework for teaching, modeling, and reinforcing expected behavior.',
       learningObjectives: ['Explain PBIS as prevention first', 'Connect PBIS to safe program culture'],
       keyPoints: ['Teach expectations before correction', 'Use consistent adult responses across spaces'],
-      sourceRefs: [pbisDeckRef('PBIS overview: proactive, positive, instructional approach')],
+      sourceRefs: [
+        pbisMasterRef('Slide 4: PBIS objectives'),
+        pbisMasterRef('Slide 6: What is PBIS?'),
+        pbisMasterRef('Slide 8: Think Together statement of behavioral purpose'),
+      ],
     },
     scenarioIds: [],
     knowledgeCheckItemIds: ['kc-pbis-purpose'],
@@ -57,7 +81,11 @@ const modules: Module[] = [
       summary: 'Tier 1 support is the universal layer: routines, active supervision, and reinforcement for all students.',
       learningObjectives: ['Name Tier 1 prevention moves', 'Use universal supports before escalation'],
       keyPoints: ['Routines reduce ambiguity', 'Active supervision pairs scanning with proximity'],
-      sourceRefs: [pbisDeckRef('Tier 1 supports: universal prevention strategies')],
+      sourceRefs: [
+        pbisMasterRef('Slide 10: Tier 1 for Year 1'),
+        pbisEc2Ref('Slide 10: Tier 1 for Year 1'),
+        knowledgeCheckRef('Page 2: Program PBIS question, Tier 1 support'),
+      ],
     },
     scenarioIds: ['light-horseplay-line'],
     knowledgeCheckItemIds: ['kc-tier-1-prevention'],
@@ -74,7 +102,10 @@ const modules: Module[] = [
       summary: 'Correction should be calm, brief, private when possible, and aimed at repairing harm.',
       learningObjectives: ['Distinguish punitive and restorative responses', 'Use correction that preserves dignity'],
       keyPoints: ['Correct the behavior, not the student identity', 'Reconnect students to expectations'],
-      sourceRefs: [pbisDeckRef('Punitive vs restorative correction')],
+      sourceRefs: [
+        pbisMasterRef('Slide 12: Punitive vs Restorative Correction'),
+        pbisMasterRef('Slides 14-17: Write-Up or Rise Up practice'),
+      ],
     },
     scenarioIds: ['jacob-pencil-pouch-bullying'],
     knowledgeCheckItemIds: ['kc-restorative-correction'],
@@ -91,7 +122,11 @@ const modules: Module[] = [
       summary: 'A behavior matrix translates broad expectations into observable actions by setting.',
       learningObjectives: ['Read a matrix by expectation and location', 'Use matrix language during routines'],
       keyPoints: ['Observable language supports consistency', 'Expectations should be positively stated'],
-      sourceRefs: [pbisDeckRef('Behavior matrix examples by setting')],
+      sourceRefs: [
+        pbisMasterRef('Slides 18-24: Behavior Matrix and matrix mindset'),
+        pbisEc2Ref('Slides 17-21: Behavior Matrix and behavior flow chart'),
+        pbisPart3Ref('Slides 7-12: Matrix works and reality check'),
+      ],
     },
     scenarioIds: [],
     knowledgeCheckItemIds: ['kc-behavior-matrix'],
@@ -108,7 +143,10 @@ const modules: Module[] = [
       summary: 'Explicit teaching names the expectation, models it, gives practice, and checks for understanding.',
       learningObjectives: ['Rewrite vague directions', 'Model and practice expectations'],
       keyPoints: ['Say exactly what students should do', 'Practice routines before high-energy moments'],
-      sourceRefs: [pbisDeckRef('Active and explicit teaching of expectations')],
+      sourceRefs: [
+        pbisMasterRef('Slides 27-30: Active and Explicit Teaching definitions and practice'),
+        pbisMasterRef('Slide 35: Plan for fluency'),
+      ],
     },
     scenarioIds: ['vague-line-up-phrase-rewrite'],
     knowledgeCheckItemIds: ['kc-explicit-teaching'],
@@ -125,7 +163,10 @@ const modules: Module[] = [
       summary: 'Minor behaviors can often be corrected in the moment; major incidents need immediate escalation.',
       learningObjectives: ['Classify behavior intensity', 'Know when to call for support'],
       keyPoints: ['Safety risk changes the response', 'Documentation supports follow-up and consistency'],
-      sourceRefs: [behaviorDeckRef('Minor vs major behavior decision practice')],
+      sourceRefs: [
+        pbisMasterRef('Slides 36-40: Minor vs Major behaviors and flowchart'),
+        knowledgeCheckRef('Page 2: Program PBIS question, Minor PL Managed and Major SPM Managed'),
+      ],
     },
     scenarioIds: ['physical-fight-transition'],
     knowledgeCheckItemIds: ['kc-minor-major'],
@@ -142,7 +183,10 @@ const modules: Module[] = [
       summary: 'Pre-correction reminds students what success looks like before a predictable challenge.',
       learningObjectives: ['Use before-the-moment prompts', 'Pair reminders with specific expectations'],
       keyPoints: ['Pre-correct before transitions', 'Keep phrasing brief, positive, and observable'],
-      sourceRefs: [pbisDeckRef('Pre-corrective phrases before transitions')],
+      sourceRefs: [
+        pbisMasterRef('Slides 50-53: Pre-Corrective Phrases and spot the difference'),
+        pbisPart3Ref('Slide 14: De-escalation strategy, restate expectation and give choice'),
+      ],
     },
     scenarioIds: [],
     knowledgeCheckItemIds: ['kc-pre-correction'],
@@ -159,7 +203,11 @@ const modules: Module[] = [
       summary: 'Specific acknowledgment tells students which expectation they met and why it matters.',
       learningObjectives: ['Write behavior-specific praise', 'Balance correction with acknowledgment'],
       keyPoints: ['Name the expectation', 'Acknowledge effort quickly and sincerely'],
-      sourceRefs: [pbisDeckRef('Positive behavior acknowledgment examples')],
+      sourceRefs: [
+        pbisMasterRef('Slides 56-59: Acknowledging Positive Behavior'),
+        pbisEc2Ref('Slides 11-15: PBIS incentives core principles and levels'),
+        pbisPart3Ref('Slide 14: Notice and praise small positive behaviors'),
+      ],
     },
     scenarioIds: ['running-hiding-under-table'],
     knowledgeCheckItemIds: ['kc-positive-acknowledgment'],
@@ -176,7 +224,11 @@ const modules: Module[] = [
       summary: 'The final check confirms PBIS decision-making across prevention, correction, and escalation.',
       learningObjectives: ['Apply PBIS across common program situations', 'Confirm readiness for field practice'],
       keyPoints: ['Use the least intensive effective response', 'Escalate immediately when safety is at risk'],
-      sourceRefs: [pbisDeckRef('Final PBIS review and readiness check')],
+      sourceRefs: [
+        pbisMasterRef('Slide 60: Objectives review'),
+        pbisPart3Ref('Slide 16: Understanding the de-escalation cycle'),
+        programInductionSopRef('Page 4: Program Pros facilitate Knowledge Checks and Surveys'),
+      ],
     },
     scenarioIds: [],
     knowledgeCheckItemIds: ['kc-final-prevention', 'kc-final-safety'],
@@ -193,7 +245,11 @@ const modules: Module[] = [
       summary: 'Learners commit to consistent, positive, restorative PBIS practices in program spaces.',
       learningObjectives: ['Name one PBIS practice to use first', 'Submit completion evidence'],
       keyPoints: ['Commitments make transfer to practice visible', 'Completion includes content version evidence'],
-      sourceRefs: [pbisDeckRef('PBIS commitment and completion receipt')],
+      sourceRefs: [
+        pbisMasterRef('Slide 61: Commitments'),
+        programInductionSopRef('Page 5: Day 3 LMS attendance entered by 4:00pm and clearance email by 5:00pm'),
+        programInductionSopRef('Page 6: Clearance Email process'),
+      ],
     },
     scenarioIds: [],
     knowledgeCheckItemIds: ['kc-commitment'],
@@ -209,7 +265,7 @@ const scenarios: Scenario[] = [
     prompt: 'Two students lightly push and laugh while waiting in line. The group is still moving, but the behavior could spread.',
     skillFocus: 'Tier 1 active supervision and calm redirection',
     expectedResponseElements: ['Move closer', 'Restate the line expectation', 'Acknowledge students meeting expectations'],
-    sourceRefs: [behaviorDeckRef('Scenario: light horseplay in line')],
+    sourceRefs: [pbisMasterRef('Slide 47: TK-MS flowchart scenario, light horseplay while waiting in line')],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -219,7 +275,10 @@ const scenarios: Scenario[] = [
     prompt: 'During a transition, two students begin hitting each other and nearby students step back.',
     skillFocus: 'major behavior escalation and safety response',
     expectedResponseElements: ['Call for support', 'Separate for safety when possible', 'Document and follow site protocol'],
-    sourceRefs: [behaviorDeckRef('Scenario: physical fight during transition')],
+    sourceRefs: [
+      pbisMasterRef('Slide 37: Minor or Major, students physically fighting during transition'),
+      pbisMasterRef('Slide 38: Managing Students Behavior, physical altercation'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -229,7 +288,10 @@ const scenarios: Scenario[] = [
     prompt: 'Jacob says classmates keep taking his pencil pouch, laughing, and telling him not to report it.',
     skillFocus: 'bullying recognition, safety, and restorative follow-up',
     expectedResponseElements: ['Protect Jacob from further harm', 'Report and document bullying indicators', 'Plan restorative repair after safety is addressed'],
-    sourceRefs: [behaviorDeckRef('Scenario: bullying/pencil pouch Jacob case')],
+    sourceRefs: [
+      pbisEc2Ref('Slide 30: Jacob pencil pouch scenario'),
+      pbisEc2Ref('Slides 31-34: Jacob action options and outcomes'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -239,7 +301,7 @@ const scenarios: Scenario[] = [
     prompt: 'Rewrite the phrase "Line up right" into language students can see, hear, and practice.',
     skillFocus: 'explicit direction with observable behavior',
     expectedResponseElements: ['Name the exact action', 'Use positive language', 'Include voice/body expectations'],
-    sourceRefs: [pbisDeckRef('Practice: vague line-up phrase rewrite')],
+    sourceRefs: [pbisMasterRef('Slides 51-52: Spot the difference line-up direction')],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -249,7 +311,10 @@ const scenarios: Scenario[] = [
     prompt: 'A student runs from the activity area and hides under a table when asked to join the group.',
     skillFocus: 'calm support, regulation, and reinforcing safe re-entry',
     expectedResponseElements: ['Stay calm and reduce audience', 'Offer a simple safe next step', 'Acknowledge any movement toward safety or rejoining'],
-    sourceRefs: [behaviorDeckRef('Scenario: student running/hiding under table')],
+    sourceRefs: [
+      pbisEc2Ref('Slide 22: TK-2 scenario, student runs and hides under a table'),
+      pbisPart3Ref('Slide 16: De-escalation cycle, escalation and recovery'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
 ]
@@ -262,7 +327,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['React quickly after every incident', 'Teach and reinforce expected behavior proactively', 'Replace all site safety procedures'],
     correctAnswer: 'Teach and reinforce expected behavior proactively',
     rationale: 'PBIS starts with prevention, teaching, and positive reinforcement.',
-    sourceRefs: [pbisDeckRef('PBIS overview: purpose')],
+    sourceRefs: [
+      pbisMasterRef('Slide 6: What is PBIS?'),
+      pbisMasterRef('Slide 8: Think Together statement of behavioral purpose'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -272,7 +340,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Use predictable routines, active supervision, and positive acknowledgment before behavior escalates.', 'Wait until students break a rule, then assign a consequence.', 'Use individualized behavior plans for every student first.'],
     correctAnswer: 'Use predictable routines, active supervision, and positive acknowledgment before behavior escalates.',
     rationale: 'Tier 1 is the universal prevention layer for all students.',
-    sourceRefs: [pbisDeckRef('Tier 1 support check')],
+    sourceRefs: [
+      knowledgeCheckRef('Page 2: Program PBIS question, What tier of support are we implementing?'),
+      pbisMasterRef('Slide 10: Tier 1 for Year 1'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -282,7 +353,7 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Publicly shame the student so others learn', 'Calmly name the behavior, reteach the expectation, and plan repair', 'Ignore repeated harm to avoid conflict'],
     correctAnswer: 'Calmly name the behavior, reteach the expectation, and plan repair',
     rationale: 'Restorative correction keeps dignity while repairing harm.',
-    sourceRefs: [pbisDeckRef('Restorative correction check')],
+    sourceRefs: [pbisMasterRef('Slides 12-17: Punitive vs Restorative Correction and practice')],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -292,7 +363,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Translate expectations into observable behaviors by setting', 'Create different rules for each staff member', 'Avoid teaching routines'],
     correctAnswer: 'Translate expectations into observable behaviors by setting',
     rationale: 'The matrix makes expectations consistent and visible.',
-    sourceRefs: [pbisDeckRef('Behavior matrix check')],
+    sourceRefs: [
+      pbisMasterRef('Slides 18-24: Behavior Matrix'),
+      pbisPart3Ref('Slides 7-12: Matrix use in real situations'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -302,7 +376,7 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['It tells students exactly what to do in observable terms', 'It is short enough to shout', 'It uses adult shorthand'],
     correctAnswer: 'It tells students exactly what to do in observable terms',
     rationale: 'Explicit directions remove ambiguity by naming visible actions.',
-    sourceRefs: [pbisDeckRef('Explicit teaching check')],
+    sourceRefs: [pbisMasterRef('Slides 27-30: Active and Explicit Teaching')],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -312,7 +386,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Escalate for support and follow safety protocol', 'Use a quiet reminder only', 'Delay response until the end of program'],
     correctAnswer: 'Escalate for support and follow safety protocol',
     rationale: 'Major behavior requires immediate safety response.',
-    sourceRefs: [behaviorDeckRef('Minor vs major check')],
+    sourceRefs: [
+      knowledgeCheckRef('Page 2: Program PBIS question, two categories of behaviors'),
+      pbisMasterRef('Slides 36-40: Minor vs Major behaviors and flowchart'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -322,7 +399,7 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Before a predictable challenge or transition', 'Only after a major incident', 'After students have already left'],
     correctAnswer: 'Before a predictable challenge or transition',
     rationale: 'Pre-correction reminds students before the moment of need.',
-    sourceRefs: [pbisDeckRef('Pre-correction check')],
+    sourceRefs: [pbisMasterRef('Slides 50-53: Pre-Corrective Phrases')],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -332,7 +409,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Good job', 'I like how you kept hands to self while waiting in line', 'Be better next time'],
     correctAnswer: 'I like how you kept hands to self while waiting in line',
     rationale: 'Behavior-specific praise names the expectation and action.',
-    sourceRefs: [pbisDeckRef('Positive acknowledgment check')],
+    sourceRefs: [
+      pbisMasterRef('Slides 56-59: Acknowledging Positive Behavior'),
+      pbisPart3Ref('Slide 14: Notice and praise small positive behaviors'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -342,7 +422,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Teaching, modeling, and reinforcing expectations', 'Removing students from every activity', 'Skipping routines to save time'],
     correctAnswer: 'Teaching, modeling, and reinforcing expectations',
     rationale: 'PBIS prioritizes proactive instruction.',
-    sourceRefs: [pbisDeckRef('Final check: prevention')],
+    sourceRefs: [
+      pbisMasterRef('Slide 60: Objectives review'),
+      pbisPart3Ref('Slide 16: Prevention in de-escalation cycle'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -352,7 +435,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['Safety and escalation protocol', 'A long restorative conversation at the scene', 'Ignoring bystanders'],
     correctAnswer: 'Safety and escalation protocol',
     rationale: 'Restorative repair comes after immediate safety is addressed.',
-    sourceRefs: [behaviorDeckRef('Final check: safety escalation')],
+    sourceRefs: [
+      pbisMasterRef('Slide 38: Managing Students Behavior, physical altercation'),
+      pbisPart3Ref('Slide 16: Crisis priority is safety and district crisis protocols'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
   {
@@ -362,7 +448,10 @@ const knowledgeCheckItems: KnowledgeCheckItem[] = [
     choices: ['A specific practice the learner will use', 'A promise to never need support', 'A list of unrelated job duties'],
     correctAnswer: 'A specific practice the learner will use',
     rationale: 'A specific commitment supports transfer from training to program practice.',
-    sourceRefs: [pbisDeckRef('Commitment check')],
+    sourceRefs: [
+      pbisMasterRef('Slide 61: Commitments'),
+      programInductionSopRef('Page 6: Staff Commitment Forms and clearance email'),
+    ],
     contentVersion: CONTENT_VERSION,
   },
 ]
@@ -412,7 +501,15 @@ const learningPath: LearningPath = {
   contentVersion: CONTENT_VERSION,
   moduleIds: modules.map((moduleItem) => moduleItem.id),
   modules,
-  sourceRefs: [pbisDeckRef('Program Induction PBIS path'), behaviorDeckRef('PBIS scenario practice seeds')],
+  sourceRefs: [
+    programInductionSopRef('Pages 1-2: Purpose, scope, and outcomes for Program Induction Training'),
+    programInductionSopRef('Pages 4-6: Program Pros facilitation, knowledge checks, surveys, LMS attendance, and clearance email'),
+    pbisMasterRef('Slides 4-61: PBIS Program Induction training content'),
+    pbisEc2Ref('Slides 5-36: PBIS part two objectives, tools, behavior scenarios, and Jacob practice'),
+    pbisPart3Ref('Slides 5-17: PBIS part three matrix, reality check, and de-escalation practice'),
+    knowledgeCheckRef('Pages 1-2: Back to School 2025 knowledge-check questions, Program PBIS row'),
+    siteLeadSopRef('Pages 1-4: Site Lead Onboarding purpose, scope, outcomes, responsibilities, and 4-week cycle'),
+  ],
 }
 
 export const trainingModules = modules

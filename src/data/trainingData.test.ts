@@ -65,6 +65,25 @@ describe('PBIS MVP training data', () => {
     ]))
   })
 
+  it('maps the shared client artifacts into the MVP source library', () => {
+    const path = getLearningPath()
+    const allRefs = [
+      ...path.sourceRefs,
+      ...path.modules.flatMap((module) => module.content.sourceRefs),
+      ...path.modules.flatMap((module) => module.scenarioIds.flatMap((id) => getScenarioById(id)?.sourceRefs ?? [])),
+      ...getKnowledgeCheckItems().flatMap((item) => item.sourceRefs),
+    ]
+
+    expect(allRefs.map((ref) => ref.artifact)).toEqual(expect.arrayContaining([
+      'SOP_Program Induction.pdf',
+      'SOP_Site Lead Onboarding.pdf',
+      'KNOWLEDGE CHECK_Back to School 2025.pdf',
+      'PBIS PPT Master.pptx',
+      'FINAL - PBIS EC2 - updated 11.4.25.pptx',
+      'PBIS part 3 PPT Template.pptx',
+    ]))
+  })
+
   it('summarizes learner progress from completion and practice records', () => {
     const completions: CompletionRecord[] = [
       {
