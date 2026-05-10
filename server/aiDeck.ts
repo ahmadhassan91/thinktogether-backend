@@ -1,7 +1,7 @@
 import { getLearningPath, trainingModules } from '../src/data/trainingData';
 import type { SourceRef } from '../src/types';
 
-export type AiDeckProvider = 'gemini' | 'kimi';
+export type AiDeckProvider = 'gemini' | 'claude' | 'kimi';
 
 export type DeckOutlineRequest = {
   provider: AiDeckProvider;
@@ -37,7 +37,7 @@ export type ProviderStatus = {
   id: AiDeckProvider | 'notebooklm_enterprise';
   label: string;
   configured: boolean;
-  mode: 'sync' | 'async-recommended' | 'source-workspace';
+  mode: 'sync' | 'async-required' | 'source-workspace';
   note: string;
 };
 
@@ -53,11 +53,18 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
       note: 'Fast default for structured slide JSON.',
     },
     {
+      id: 'claude',
+      label: 'Claude Sonnet',
+      configured: Boolean(env.ANTHROPIC_API_KEY),
+      mode: 'sync',
+      note: 'Premium narrative planner for polished facilitator decks. Requires Anthropic credits.',
+    },
+    {
       id: 'kimi',
       label: 'Kimi K2.6 via NVIDIA',
       configured: Boolean(env.NVIDIA_API_KEY),
-      mode: 'async-recommended',
-      note: 'Available for deeper creative drafts; run as a queued job for production.',
+      mode: 'async-required',
+      note: 'Configured, but too slow for live requests. Use only after background job queue is added.',
     },
     {
       id: 'notebooklm_enterprise',
@@ -72,6 +79,7 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
 export async function generateDeckOutline(request: DeckOutlineRequest): Promise<DeckOutline> {
   const prompt = buildDeckPrompt(request);
   if (request.provider === 'gemini') return generateWithGemini(prompt, request);
+  if (request.provider === 'claude') return generateWithClaude(prompt, request);
   return generateWithKimi(prompt, request);
 }
 
@@ -126,6 +134,8 @@ Rules:
 - Preserve human facilitation; do not imply AI replaces trainers.
 - Use only the provided source artifacts for claims.
 - Keep every slide practical for expanded learning / after-school program staff.
+- Write as a professional facilitator deck, not a classroom handout.
+- Avoid generic training filler; each slide needs a clear claim, a proof point, and a concrete activity.
 - Return exactly ${request.slideCount} slides.
 - Return JSON only, no markdown.`;
 }
@@ -154,33 +164,32 @@ async function generateWithGemini(prompt: string, request: DeckOutlineRequest): 
   return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.modelVersion ?? 'gemini-flash-latest');
 }
 
-async function generateWithKimi(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) throw new Error('NVIDIA API key is not configured.');
+async function generateWithClaude(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('Anthropic API key is not configured.');
 
   const result = await postJson(
-    'https://integrate.api.nvidia.com/v1/chat/completions',
+    'https://api.anthropic.com/v1/messages',
     {
-      model: 'moonshotai/kimi-k2.6',
-      messages: [
-        { role: 'system', content: 'Return compact valid JSON only. No markdown.' },
-        { role: 'user', content: prompt },
-      ],
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
       max_tokens: 4096,
-      temperature: 0.45,
-      top_p: 0.9,
-      stream: false,
-      chat_template_kwargs: { thinking: false },
+      temperature: 0.35,
+      system: 'You are a senior learning designer. Return compact valid JSON only. No markdown.',
+      messages: [{ role: 'user', content: prompt }],
     },
     {
-      authorization: `Bearer ${apiKey}`,
-      accept: 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
     },
-    130_000,
+    60_000,
   );
   const responsePayload = result as AnyJson;
-  const text = responsePayload.choices?.[0]?.message?.content ?? '';
-  return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.model ?? 'moonshotai/kimi-k2.6');
+  const text = responsePayload.content?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
+  return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.model ?? 'claude-sonnet');
+}
+
+async function generateWithKimi(_prompt: string, _request: DeckOutlineRequest): Promise<DeckOutline> {
+  throw new Error('Kimi is configured for async jobs only. Use Gemini now, or add a background queue before enabling Kimi generation.');
 }
 
 async function postJson(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<unknown> {

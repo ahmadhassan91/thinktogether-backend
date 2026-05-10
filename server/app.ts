@@ -15,6 +15,7 @@ import {
   type AppDatabase,
   type SeedConfig,
 } from './db';
+import { renderDeckPptx } from './pptxDeck';
 
 export type AppOptions = {
   databaseUrl: string;
@@ -82,7 +83,7 @@ const adminCreateCohortSchema = z.object({
 });
 
 const aiDeckOutlineSchema = z.object({
-  provider: z.enum(['gemini', 'kimi']).default('gemini'),
+  provider: z.enum(['gemini', 'claude', 'kimi']).default('gemini'),
   topic: z.string().trim().min(8).max(180),
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
   durationMinutes: z.coerce.number().int().min(10).max(180).default(45),
@@ -592,12 +593,39 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
     if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
+    if (selected.mode === 'async-required') {
+      return res.status(409).json({ error: `${selected.label} requires a background job queue before live generation is enabled.` });
+    }
 
     try {
       const outline = await generateDeckOutline(payload);
       res.status(201).json({ outline, provider: selected });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI deck generation failed';
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.post('/api/ai/deck-pptx', authenticate, requireAdmin, async (req, res) => {
+    const payload = aiDeckOutlineSchema.parse(req.body);
+    const providers = getAiProviderStatuses();
+    const selected = providers.find((provider) => provider.id === payload.provider);
+    if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
+    if (selected.mode === 'async-required') {
+      return res.status(409).json({ error: `${selected.label} requires a background job queue before PPTX export is enabled.` });
+    }
+
+    try {
+      const outline = await generateDeckOutline(payload);
+      const pptx = await renderDeckPptx(outline);
+      const filename = `${slugify(outline.title)}.pptx`;
+      res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+      res.setHeader('content-disposition', `attachment; filename="${filename}"`);
+      res.setHeader('x-ai-provider', selected.id);
+      res.setHeader('x-ai-model', outline.model);
+      res.status(201).send(pptx);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI PPTX generation failed';
       res.status(502).json({ error: message });
     }
   });
@@ -616,6 +644,15 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     db,
     close: () => db.close(),
   };
+}
+
+function slugify(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  return slug || 'think-together-training-deck';
 }
 
 async function authenticate(req: AuthedRequest, res: Response, next: NextFunction) {

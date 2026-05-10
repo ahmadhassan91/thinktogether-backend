@@ -625,6 +625,93 @@ describe('Think Together training API', () => {
     }
   });
 
+  it('exports a branded AI-generated PowerPoint for admins', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    const deckJson = {
+      title: 'PBIS Practice Lab',
+      audience: 'Program leaders',
+      durationMinutes: 45,
+      learningObjectives: ['Practice proactive facilitation'],
+      slides: [
+        {
+          title: 'Set the expectation',
+          objective: 'Use explicit PBIS language.',
+          talkingPoints: ['Name the routine', 'Model it', 'Practice it'],
+          activityPrompt: 'Practice a transition script.',
+          facilitatorNotes: 'Keep language positive and observable.',
+          sourceRefs: [{ artifact: 'PBIS PPT Master.pptx', locator: 'Slides 27-30' }],
+        },
+        {
+          title: 'Acknowledge behavior',
+          objective: 'Reinforce the expected behavior.',
+          talkingPoints: ['Notice quickly', 'Name the behavior', 'Connect to safety'],
+          activityPrompt: 'Write one behavior-specific praise statement.',
+          facilitatorNotes: 'Avoid generic praise.',
+          sourceRefs: [{ artifact: 'PBIS part 3 PPT Template.pptx', locator: 'Slide 14' }],
+        },
+      ],
+      handoffNotes: ['Review before delivery.'],
+    };
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          modelVersion: 'gemini-test',
+          candidates: [{ content: { parts: [{ text: JSON.stringify(deckJson) }] } }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    ));
+
+    try {
+      const response = await request(handle.app)
+        .post('/api/ai/deck-pptx')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          provider: 'gemini',
+          topic: 'PBIS practice lab for program leaders',
+          audience: 'Program leaders',
+          durationMinutes: 45,
+          slideCount: 4,
+        })
+        .expect(201);
+
+      expect(response.headers['content-type']).toContain('presentationml.presentation');
+      expect(response.headers['content-disposition']).toContain('pbis-practice-lab.pptx');
+      expect(Number(response.headers['content-length'])).toBeGreaterThan(5000);
+    } finally {
+      if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
+      else delete process.env.GEMINI_API_KEY;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not run Kimi as a live deck generator', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+    const previousNvidiaKey = process.env.NVIDIA_API_KEY;
+    process.env.NVIDIA_API_KEY = 'test-nvidia-key';
+
+    try {
+      await request(handle.app)
+        .post('/api/ai/deck-outline')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          provider: 'kimi',
+          topic: 'PBIS practice lab for program leaders',
+          audience: 'Program leaders',
+          durationMinutes: 45,
+          slideCount: 4,
+        })
+        .expect(409);
+    } finally {
+      if (previousNvidiaKey) process.env.NVIDIA_API_KEY = previousNvidiaKey;
+      else delete process.env.NVIDIA_API_KEY;
+    }
+  });
+
   it('persists learner progress and scenario submissions', async () => {
     handle = await boot();
     const token = await loginToken(handle);
