@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { scoreScenarioResponse } from '../src/features/coach/coachEngine';
+import { generateDeckOutline, getAiProviderStatuses } from './aiDeck';
 import { createInviteToken, createSessionToken, hashPassword, hashToken, verifyPassword } from './auth';
 import {
   CONTENT_VERSION,
@@ -78,6 +79,14 @@ const adminCreateCohortSchema = z.object({
   startsAt: z.string().datetime(),
   facilitatorIds: z.array(z.string().trim().min(1)).default([]),
   pathIds: z.array(z.string().trim().min(1)).min(1),
+});
+
+const aiDeckOutlineSchema = z.object({
+  provider: z.enum(['gemini', 'kimi']).default('gemini'),
+  topic: z.string().trim().min(8).max(180),
+  audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
+  durationMinutes: z.coerce.number().int().min(10).max(180).default(45),
+  slideCount: z.coerce.number().int().min(4).max(14).default(8),
 });
 
 export async function createApp(options: AppOptions): Promise<AppHandle> {
@@ -572,6 +581,25 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
         learnerCount: 0,
       },
     });
+  });
+
+  app.get('/api/ai/providers', authenticate, requireAdmin, async (_req, res) => {
+    res.json({ providers: getAiProviderStatuses() });
+  });
+
+  app.post('/api/ai/deck-outline', authenticate, requireAdmin, async (req, res) => {
+    const payload = aiDeckOutlineSchema.parse(req.body);
+    const providers = getAiProviderStatuses();
+    const selected = providers.find((provider) => provider.id === payload.provider);
+    if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
+
+    try {
+      const outline = await generateDeckOutline(payload);
+      res.status(201).json({ outline, provider: selected });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI deck generation failed';
+      res.status(502).json({ error: message });
+    }
   });
 
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

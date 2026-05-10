@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type AppHandle } from './app';
 import { hashToken } from './auth';
 
@@ -552,6 +552,77 @@ describe('Think Together training API', () => {
     expect(res.body.modules.length).toBeGreaterThanOrEqual(3);
     expect(res.body.knowledgeChecks.length).toBeGreaterThan(0);
     expect(res.body.scenarios.length).toBeGreaterThan(0);
+  });
+
+  it('generates a source-grounded AI deck outline for admins', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    const deckJson = {
+      title: 'Effective Lesson Delivery',
+      audience: 'Think Together program staff',
+      durationMinutes: 45,
+      learningObjectives: ['Practice a 10:2 delivery rhythm'],
+      slides: [
+        {
+          title: 'Open with the why',
+          objective: 'Connect PBIS to program culture.',
+          talkingPoints: ['Name the expectation', 'Model the routine', 'Invite practice'],
+          activityPrompt: 'Pair-share one attention getter.',
+          facilitatorNotes: 'Keep examples site-specific.',
+          sourceRefs: [{ artifact: 'PBIS PPT Master.pptx', locator: 'Slide 4: PBIS objectives' }],
+        },
+        {
+          title: 'Practice the move',
+          objective: 'Apply the expected behavior routine.',
+          talkingPoints: ['Use concise language', 'Observe response', 'Reinforce quickly'],
+          activityPrompt: 'Run a two-minute practice round.',
+          facilitatorNotes: 'Debrief with one strength and one adjustment.',
+          sourceRefs: [{ artifact: 'SOP_Program Induction.pdf', locator: 'Pages 4-6: facilitation' }],
+        },
+      ],
+      handoffNotes: ['Trainer should review source alignment before export.'],
+    };
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          modelVersion: 'gemini-test',
+          candidates: [{ content: { parts: [{ text: JSON.stringify(deckJson) }] } }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const response = await request(handle.app)
+        .post('/api/ai/deck-outline')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          provider: 'gemini',
+          topic: 'Effective lesson delivery with 10:2 practice',
+          audience: 'Program leaders',
+          durationMinutes: 45,
+          slideCount: 6,
+        })
+        .expect(201);
+
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('generativelanguage.googleapis.com'), expect.any(Object));
+      expect(response.body.outline).toEqual(
+        expect.objectContaining({
+          provider: 'gemini',
+          model: 'gemini-test',
+          title: 'Effective Lesson Delivery',
+          sourceArtifacts: expect.arrayContaining(['PBIS PPT Master.pptx', 'SOP_Program Induction.pdf']),
+        }),
+      );
+      expect(response.body.outline.slides[0].sourceRefs[0].artifact).toBe('PBIS PPT Master.pptx');
+    } finally {
+      if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
+      else delete process.env.GEMINI_API_KEY;
+      vi.unstubAllGlobals();
+    }
   });
 
   it('persists learner progress and scenario submissions', async () => {
