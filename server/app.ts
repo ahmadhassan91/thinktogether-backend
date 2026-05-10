@@ -83,7 +83,7 @@ const adminCreateCohortSchema = z.object({
 });
 
 const aiDeckOutlineSchema = z.object({
-  provider: z.enum(['gemini', 'claude', 'kimi']).default('gemini'),
+  provider: z.enum(['gemini', 'openai', 'claude']).default('openai'),
   topic: z.string().trim().min(8).max(180),
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
   durationMinutes: z.coerce.number().int().min(10).max(180).default(45),
@@ -593,9 +593,6 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
     if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
-    if (selected.mode === 'async-required') {
-      return res.status(409).json({ error: `${selected.label} requires a background job queue before live generation is enabled.` });
-    }
 
     try {
       const outline = await generateDeckOutline(payload);
@@ -611,9 +608,6 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
     if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
-    if (selected.mode === 'async-required') {
-      return res.status(409).json({ error: `${selected.label} requires a background job queue before PPTX export is enabled.` });
-    }
 
     try {
       const outline = await generateDeckOutline(payload);

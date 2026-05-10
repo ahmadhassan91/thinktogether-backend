@@ -128,23 +128,203 @@ function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSl
     fit: 'shrink',
   });
 
-  const points = slideData.talkingPoints.slice(0, 4).map((point) => ({ text: point, options: { bullet: { indent: 13 }, hanging: 4 } }));
-  slide.addText(points, {
-    x: 0.75,
-    y: 2.1,
-    w: 5.8,
-    h: 2.5,
-    color: COLORS.ink,
-    fontSize: 17,
-    breakLine: false,
-    fit: 'shrink',
-    valign: 'middle',
-  });
+  if (slideData.layout === 'matrix') {
+    addMatrixSlide(slide, slideData);
+  } else if (slideData.layout === 'scenario') {
+    addScenarioSlide(slide, slideData);
+  } else if (slideData.layout === 'commitment') {
+    addCommitmentSlide(slide, slideData);
+  } else {
+    addProcessSlide(slide, slideData);
+  }
 
-  addActivityCard(slide, slideData.activityPrompt, index);
-  addFacilitatorNote(slide, slideData.facilitatorNotes);
   addSourceFootnote(slide, slideData);
   addFooter(slide, outline, `Slide ${index + 1}`);
+}
+
+function addProcessSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const points = padPoints(slideData.talkingPoints, 3);
+  points.slice(0, 3).forEach((point, index) => {
+    const x = 0.72 + index * 2.15;
+    slide.addShape(SHAPE.roundRect, {
+      x,
+      y: 2.02,
+      w: 1.78,
+      h: 2.22,
+      rectRadius: 0.08,
+      fill: { color: index === 1 ? COLORS.softTeal : COLORS.white },
+      line: { color: index === 1 ? 'B7DED8' : COLORS.line },
+    });
+    slide.addText(`0${index + 1}`, {
+      x: x + 0.18,
+      y: 2.25,
+      w: 0.6,
+      h: 0.28,
+      color: index === 1 ? COLORS.teal : COLORS.orange,
+      fontSize: 15,
+      bold: true,
+      margin: 0,
+    });
+    slide.addText(point, {
+      x: x + 0.18,
+      y: 2.82,
+      w: 1.38,
+      h: 0.88,
+      color: COLORS.ink,
+      fontSize: 14,
+      bold: true,
+      fit: 'shrink',
+      margin: 0,
+    });
+  });
+  addActivityCard(slide, slideData.activityPrompt, 0);
+  addFacilitatorNote(slide, slideData.facilitatorNotes);
+}
+
+function addMatrixSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const points = padPoints(slideData.talkingPoints, 4);
+  points.slice(0, 4).forEach((point, index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = 0.75 + col * 3.05;
+    const y = 1.95 + row * 1.52;
+    slide.addShape(SHAPE.roundRect, {
+      x,
+      y,
+      w: 2.65,
+      h: 1.1,
+      rectRadius: 0.08,
+      fill: { color: index % 2 === 0 ? COLORS.softTeal : 'FFF5E7' },
+      line: { color: index % 2 === 0 ? 'B7DED8' : 'F3C6A8' },
+    });
+    slide.addText(point, {
+      x: x + 0.22,
+      y: y + 0.26,
+      w: 2.18,
+      h: 0.46,
+      color: COLORS.ink,
+      fontSize: 14,
+      bold: true,
+      align: 'center',
+      fit: 'shrink',
+      margin: 0,
+    });
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 6.8,
+    y: 1.9,
+    w: 0.08,
+    h: 3.2,
+    fill: { color: COLORS.yellow },
+    line: { color: COLORS.yellow },
+  });
+  addActivityCard(slide, slideData.activityPrompt, 1);
+  addFacilitatorNote(slide, slideData.facilitatorNotes);
+}
+
+function addScenarioSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  slide.addShape(SHAPE.roundRect, {
+    x: 0.75,
+    y: 1.95,
+    w: 5.9,
+    h: 3.25,
+    rectRadius: 0.08,
+    fill: { color: COLORS.white },
+    line: { color: COLORS.line },
+  });
+  slide.addText('Scenario Lab', {
+    x: 1.05,
+    y: 2.25,
+    w: 2.2,
+    h: 0.3,
+    color: COLORS.orange,
+    fontSize: 14,
+    bold: true,
+    margin: 0,
+  });
+  slide.addText(slideData.activityPrompt, {
+    x: 1.05,
+    y: 2.74,
+    w: 5.25,
+    h: 1.0,
+    color: COLORS.ink,
+    fontSize: 20,
+    bold: true,
+    fit: 'shrink',
+    margin: 0,
+  });
+  const points = padPoints(slideData.talkingPoints, 3);
+  points.slice(0, 3).forEach((point, index) => {
+    slide.addText(`${index + 1}. ${point}`, {
+      x: 7.45,
+      y: 1.92 + index * 0.86,
+      w: 4.2,
+      h: 0.38,
+      color: COLORS.ink,
+      fontSize: 15,
+      bold: index === 0,
+      fit: 'shrink',
+      margin: 0,
+    });
+  });
+  addFacilitatorNote(slide, slideData.facilitatorNotes);
+}
+
+function addCommitmentSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const points = padPoints(slideData.talkingPoints, 3);
+  slide.addShape(SHAPE.roundRect, {
+    x: 0.75,
+    y: 2.0,
+    w: 5.9,
+    h: 2.7,
+    rectRadius: 0.08,
+    fill: { color: COLORS.softTeal },
+    line: { color: 'B7DED8' },
+  });
+  slide.addText('Commitment Prompt', {
+    x: 1.05,
+    y: 2.28,
+    w: 2.5,
+    h: 0.3,
+    color: COLORS.teal,
+    fontSize: 14,
+    bold: true,
+    margin: 0,
+  });
+  slide.addText(slideData.activityPrompt, {
+    x: 1.05,
+    y: 2.8,
+    w: 5.0,
+    h: 1.08,
+    color: COLORS.ink,
+    fontSize: 22,
+    bold: true,
+    fit: 'shrink',
+    margin: 0,
+  });
+  points.slice(0, 3).forEach((point, index) => {
+    slide.addShape(SHAPE.roundRect, {
+      x: 7.25,
+      y: 1.85 + index * 1.05,
+      w: 4.9,
+      h: 0.72,
+      rectRadius: 0.08,
+      fill: { color: index === 1 ? 'FFF5E7' : COLORS.white },
+      line: { color: COLORS.line },
+    });
+    slide.addText(point, {
+      x: 7.55,
+      y: 2.08 + index * 1.05,
+      w: 4.25,
+      h: 0.24,
+      color: COLORS.ink,
+      fontSize: 13,
+      bold: true,
+      fit: 'shrink',
+      margin: 0,
+    });
+  });
+  addFacilitatorNote(slide, slideData.facilitatorNotes);
 }
 
 function addFacilitatorHandoffSlide(pptx: pptxgen, outline: DeckOutline) {
@@ -396,6 +576,12 @@ function addFacilitatorNote(slide: pptxgen.Slide, note: string) {
     fit: 'shrink',
     margin: 0,
   });
+}
+
+function padPoints(points: string[], minimum: number) {
+  const fallback = ['Teach the expectation', 'Practice the routine', 'Reinforce the behavior', 'Transfer to site'];
+  const combined = [...points.filter(Boolean), ...fallback];
+  return combined.slice(0, Math.max(minimum, points.length));
 }
 
 function addObjectiveBand(slide: pptxgen.Slide, objectives: string[]) {

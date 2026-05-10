@@ -1,7 +1,7 @@
 import { getLearningPath, trainingModules } from '../src/data/trainingData';
 import type { SourceRef } from '../src/types';
 
-export type AiDeckProvider = 'gemini' | 'claude' | 'kimi';
+export type AiDeckProvider = 'gemini' | 'openai' | 'claude';
 
 export type DeckOutlineRequest = {
   provider: AiDeckProvider;
@@ -14,6 +14,7 @@ export type DeckOutlineRequest = {
 export type DeckSlide = {
   title: string;
   objective: string;
+  layout: 'process' | 'matrix' | 'scenario' | 'commitment';
   talkingPoints: string[];
   activityPrompt: string;
   facilitatorNotes: string;
@@ -37,7 +38,7 @@ export type ProviderStatus = {
   id: AiDeckProvider | 'notebooklm_enterprise';
   label: string;
   configured: boolean;
-  mode: 'sync' | 'async-required' | 'source-workspace';
+  mode: 'sync' | 'source-workspace';
   note: string;
 };
 
@@ -53,18 +54,18 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
       note: 'Fast default for structured slide JSON.',
     },
     {
+      id: 'openai',
+      label: 'OpenAI GPT-5.2',
+      configured: Boolean(env.OPENAI_API_KEY),
+      mode: 'sync',
+      note: 'Premium structured deck planner for professional PPTX exports.',
+    },
+    {
       id: 'claude',
       label: 'Claude Sonnet',
       configured: Boolean(env.ANTHROPIC_API_KEY),
       mode: 'sync',
       note: 'Premium narrative planner for polished facilitator decks. Requires Anthropic credits.',
-    },
-    {
-      id: 'kimi',
-      label: 'Kimi K2.6 via NVIDIA',
-      configured: Boolean(env.NVIDIA_API_KEY),
-      mode: 'async-required',
-      note: 'Configured, but too slow for live requests. Use only after background job queue is added.',
     },
     {
       id: 'notebooklm_enterprise',
@@ -79,8 +80,8 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
 export async function generateDeckOutline(request: DeckOutlineRequest): Promise<DeckOutline> {
   const prompt = buildDeckPrompt(request);
   if (request.provider === 'gemini') return generateWithGemini(prompt, request);
-  if (request.provider === 'claude') return generateWithClaude(prompt, request);
-  return generateWithKimi(prompt, request);
+  if (request.provider === 'openai') return generateWithOpenAi(prompt, request);
+  return generateWithClaude(prompt, request);
 }
 
 export function buildDeckPrompt(request: DeckOutlineRequest) {
@@ -120,6 +121,7 @@ Required JSON shape:
     {
       "title": "string",
       "objective": "string",
+      "layout": "process | matrix | scenario | commitment",
       "talkingPoints": ["string", "string", "string"],
       "activityPrompt": "string",
       "facilitatorNotes": "string",
@@ -136,6 +138,8 @@ Rules:
 - Keep every slide practical for expanded learning / after-school program staff.
 - Write as a professional facilitator deck, not a classroom handout.
 - Avoid generic training filler; each slide needs a clear claim, a proof point, and a concrete activity.
+- Choose varied slide layouts: process for routines, matrix for comparisons, scenario for situational practice, commitment for transfer/next steps.
+- Talking points should be short labels or evidence statements that can become infographic cards.
 - Return exactly ${request.slideCount} slides.
 - Return JSON only, no markdown.`;
 }
@@ -164,6 +168,35 @@ async function generateWithGemini(prompt: string, request: DeckOutlineRequest): 
   return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.modelVersion ?? 'gemini-flash-latest');
 }
 
+async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OpenAI API key is not configured.');
+
+  const result = await postJson(
+    'https://api.openai.com/v1/responses',
+    {
+      model: process.env.OPENAI_DECK_MODEL || 'gpt-5.2',
+      instructions: 'You are a senior learning designer and presentation strategist. Return compact valid JSON only. No markdown.',
+      input: prompt,
+      max_output_tokens: 4096,
+      text: {
+        format: {
+          type: 'json_object',
+        },
+      },
+    },
+    {
+      authorization: `Bearer ${apiKey}`,
+    },
+    75_000,
+  );
+  const responsePayload = result as AnyJson;
+  const text = responsePayload.output_text
+    ?? responsePayload.output?.flatMap((item: AnyJson) => item.content ?? []).map((part: AnyJson) => part.text ?? '').join('')
+    ?? '';
+  return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.model ?? 'gpt-5.2');
+}
+
 async function generateWithClaude(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Anthropic API key is not configured.');
@@ -186,10 +219,6 @@ async function generateWithClaude(prompt: string, request: DeckOutlineRequest): 
   const responsePayload = result as AnyJson;
   const text = responsePayload.content?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
   return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.model ?? 'claude-sonnet');
-}
-
-async function generateWithKimi(_prompt: string, _request: DeckOutlineRequest): Promise<DeckOutline> {
-  throw new Error('Kimi is configured for async jobs only. Use Gemini now, or add a background queue before enabling Kimi generation.');
 }
 
 async function postJson(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<unknown> {
@@ -228,6 +257,7 @@ function normalizeDeckOutline(payload: Partial<DeckOutline>, request: DeckOutlin
     slides: slides.map((slide, index) => ({
       title: String(slide?.title || `Slide ${index + 1}`),
       objective: String(slide?.objective || 'Support facilitator-led practice.'),
+      layout: normalizeLayout(slide?.layout, index),
       talkingPoints: stringArray(slide?.talkingPoints).slice(0, 4),
       activityPrompt: String(slide?.activityPrompt || 'Pause for a short pair practice.'),
       facilitatorNotes: String(slide?.facilitatorNotes || 'Keep the activity grounded in site realities.'),
@@ -237,6 +267,12 @@ function normalizeDeckOutline(payload: Partial<DeckOutline>, request: DeckOutlin
     sourceArtifacts,
     generatedAt: new Date().toISOString(),
   };
+}
+
+function normalizeLayout(value: unknown, index: number): DeckSlide['layout'] {
+  if (value === 'process' || value === 'matrix' || value === 'scenario' || value === 'commitment') return value;
+  const layouts: DeckSlide['layout'][] = ['process', 'matrix', 'scenario', 'commitment'];
+  return layouts[index % layouts.length];
 }
 
 function parseJsonObject(text: string) {
