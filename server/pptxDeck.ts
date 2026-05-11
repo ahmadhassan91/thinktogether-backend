@@ -23,7 +23,8 @@ const MARGIN_X = 0.55;
 const FOOTER_Y = 7.05;
 
 export async function renderDeckPptx(outline: DeckOutline): Promise<Buffer> {
-  const pptx = new pptxgen();
+  const PptxGen = ((pptxgen as unknown as { default?: typeof pptxgen }).default ?? pptxgen) as typeof pptxgen;
+  const pptx = new PptxGen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'Think Together Training MVP';
   pptx.company = 'Think Together';
