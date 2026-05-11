@@ -43,6 +43,22 @@ type AuthedRequest = Request & { user?: User; db?: AppDatabase };
 const authRateLimits = new Map<string, { count: number; resetAt: number }>();
 const AUTH_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_RATE_LIMIT_MAX_ATTEMPTS = 10;
+const DECK_JOB_TTL_MS = 15 * 60 * 1000;
+
+type DeckJob = {
+  id: string;
+  status: 'queued' | 'running' | 'ready' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: number;
+  filename?: string;
+  provider?: string;
+  model?: string;
+  pptx?: Buffer;
+  error?: string;
+};
+
+const deckJobs = new Map<string, DeckJob>();
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -624,6 +640,67 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     }
   });
 
+  app.post('/api/ai/deck-jobs', authenticate, requireAdmin, async (req, res) => {
+    const payload = aiDeckOutlineSchema.parse(req.body);
+    const providers = getAiProviderStatuses();
+    const selected = providers.find((provider) => provider.id === payload.provider);
+    if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
+
+    sweepDeckJobs();
+    const now = new Date().toISOString();
+    const job: DeckJob = {
+      id: randomUUID(),
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: Date.now() + DECK_JOB_TTL_MS,
+      provider: selected.id,
+    };
+    deckJobs.set(job.id, job);
+
+    void (async () => {
+      updateDeckJob(job.id, { status: 'running' });
+      try {
+        const outline = await generateDeckOutline(payload);
+        const pptx = await renderDeckPptx(outline);
+        updateDeckJob(job.id, {
+          status: 'ready',
+          filename: `${slugify(outline.title)}.pptx`,
+          model: outline.model,
+          pptx,
+        });
+      } catch (error) {
+        updateDeckJob(job.id, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'AI PPTX generation failed',
+        });
+      }
+    })();
+
+    res.status(202).json({ job: publicDeckJob(job) });
+  });
+
+  app.get('/api/ai/deck-jobs/:jobId', authenticate, requireAdmin, async (req, res) => {
+    sweepDeckJobs();
+    const job = deckJobs.get(String(req.params.jobId));
+    if (!job) return res.status(404).json({ error: 'Deck job not found or expired' });
+    res.json({ job: publicDeckJob(job) });
+  });
+
+  app.get('/api/ai/deck-jobs/:jobId/pptx', authenticate, requireAdmin, async (req, res) => {
+    sweepDeckJobs();
+    const job = deckJobs.get(String(req.params.jobId));
+    if (!job) return res.status(404).json({ error: 'Deck job not found or expired' });
+    if (job.status === 'failed') return res.status(502).json({ error: job.error ?? 'AI PPTX generation failed' });
+    if (job.status !== 'ready' || !job.pptx) return res.status(202).json({ job: publicDeckJob(job) });
+
+    res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('content-disposition', `attachment; filename="${job.filename ?? 'think-together-training-deck.pptx'}"`);
+    if (job.provider) res.setHeader('x-ai-provider', job.provider);
+    if (job.model) res.setHeader('x-ai-model', job.model);
+    res.status(200).send(job.pptx);
+  });
+
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     void next;
     if (err instanceof z.ZodError) {
@@ -647,6 +724,37 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 72);
   return slug || 'think-together-training-deck';
+}
+
+function updateDeckJob(jobId: string, patch: Partial<DeckJob>) {
+  const job = deckJobs.get(jobId);
+  if (!job) return;
+  deckJobs.set(jobId, {
+    ...job,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+    expiresAt: Date.now() + DECK_JOB_TTL_MS,
+  });
+}
+
+function publicDeckJob(job: DeckJob) {
+  return {
+    id: job.id,
+    status: job.status,
+    provider: job.provider,
+    model: job.model,
+    filename: job.filename,
+    error: job.error,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+  };
+}
+
+function sweepDeckJobs() {
+  const now = Date.now();
+  for (const [id, job] of deckJobs) {
+    if (job.expiresAt <= now) deckJobs.delete(id);
+  }
 }
 
 async function authenticate(req: AuthedRequest, res: Response, next: NextFunction) {
