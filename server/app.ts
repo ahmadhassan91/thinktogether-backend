@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { scoreScenarioResponse } from '../src/features/coach/coachEngine';
-import { generateDeckOutline, getAiProviderStatuses } from './aiDeck';
+import { generateDeckOutline, getAiProviderStatuses, type DeckOutline } from './aiDeck';
 import { createInviteToken, createSessionToken, hashPassword, hashToken, verifyPassword } from './auth';
 import {
   CONTENT_VERSION,
@@ -54,6 +54,7 @@ type DeckJob = {
   filename?: string;
   provider?: string;
   model?: string;
+  outline?: DeckOutline;
   pptx?: Buffer;
   error?: string;
 };
@@ -617,6 +618,55 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       const message = error instanceof Error ? error.message : 'AI deck generation failed';
       res.status(502).json({ error: message });
     }
+  });
+
+  app.post('/api/ai/deck-outline-jobs', authenticate, requireAdmin, async (req, res) => {
+    const payload = aiDeckOutlineSchema.parse(req.body);
+    const providers = getAiProviderStatuses();
+    const selected = providers.find((provider) => provider.id === payload.provider);
+    if (!selected?.configured) return res.status(503).json({ error: `${selected?.label ?? payload.provider} is not configured` });
+
+    sweepDeckJobs();
+    const now = new Date().toISOString();
+    const job: DeckJob = {
+      id: randomUUID(),
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: Date.now() + DECK_JOB_TTL_MS,
+      provider: selected.id,
+    };
+    deckJobs.set(job.id, job);
+
+    void (async () => {
+      updateDeckJob(job.id, { status: 'running' });
+      try {
+        const outline = await generateDeckOutline(payload);
+        updateDeckJob(job.id, {
+          status: 'ready',
+          model: outline.model,
+          outline,
+        });
+      } catch (error) {
+        updateDeckJob(job.id, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'AI deck generation failed',
+        });
+      }
+    })();
+
+    res.status(202).json({ job: publicDeckJob(job) });
+  });
+
+  app.get('/api/ai/deck-outline-jobs/:jobId', authenticate, requireAdmin, async (req, res) => {
+    sweepDeckJobs();
+    const job = deckJobs.get(String(req.params.jobId));
+    if (!job) return res.status(404).json({ error: 'Deck job not found or expired' });
+    if (job.status === 'failed') return res.status(502).json({ job: publicDeckJob(job), error: job.error ?? 'AI deck generation failed' });
+    if (job.status !== 'ready' || !job.outline) return res.json({ job: publicDeckJob(job) });
+
+    const provider = getAiProviderStatuses().find((item) => item.id === job.provider);
+    res.json({ job: publicDeckJob(job), outline: job.outline, provider });
   });
 
   app.post('/api/ai/deck-pptx', authenticate, requireAdmin, async (req, res) => {
