@@ -242,16 +242,11 @@ a {
 }
 
 .tt-brand-header__logo {
-  display: grid;
-  width: 3rem;
-  height: 3rem;
+  display: block;
+  width: min(11rem, 38vw);
+  height: auto;
   flex: 0 0 auto;
-  place-items: center;
-  border-radius: var(--tt-radius);
-  background: var(--tt-orange);
-  color: var(--tt-white);
-  font-weight: 900;
-  letter-spacing: 0;
+  object-fit: contain;
 }
 
 .tt-brand-header__eyebrow,

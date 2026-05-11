@@ -12,7 +12,7 @@ describe('BrandHeader', () => {
     expect(
       screen.getByRole('heading', { name: /think together training mvp/i }),
     ).toBeInTheDocument()
-    expect(screen.getByText('TT')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /think together logo/i })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /learner mode/i })).toBeChecked()
     expect(screen.getByRole('radio', { name: /admin mode/i })).not.toBeChecked()
   })

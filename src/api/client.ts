@@ -142,6 +142,45 @@ export type ScenarioScorePayload = {
   sourceBasis: string[]
 }
 
+export type AiDeckProvider = 'gemini' | 'openai' | 'claude'
+
+export type AiProviderStatus = {
+  id: AiDeckProvider | 'notebooklm_enterprise'
+  label: string
+  configured: boolean
+  mode: 'sync' | 'source-workspace'
+  note: string
+}
+
+export type AiDeckOutlineInput = {
+  provider: AiDeckProvider
+  topic: string
+  audience: string
+  durationMinutes: number
+  slideCount: number
+}
+
+export type AiDeckOutline = {
+  provider: AiDeckProvider
+  model: string
+  title: string
+  audience: string
+  durationMinutes: number
+  learningObjectives: string[]
+  slides: Array<{
+    title: string
+    objective: string
+    layout?: 'process' | 'matrix' | 'scenario' | 'commitment'
+    talkingPoints: string[]
+    activityPrompt: string
+    facilitatorNotes: string
+    sourceRefs: Array<{ artifact: string; locator: string }>
+  }>
+  handoffNotes: string[]
+  sourceArtifacts: string[]
+  generatedAt: string
+}
+
 export function readStoredToken() {
   return window.localStorage.getItem(TOKEN_KEY)
 }
@@ -270,6 +309,116 @@ export async function createAdminCohort(cohort: AdminCohortInput) {
     method: 'POST',
     body: JSON.stringify(cohort),
   })
+}
+
+export async function getAiProviders() {
+  return request<{ providers: AiProviderStatus[] }>('/api/ai/providers')
+}
+
+export async function createAiDeckOutline(input: AiDeckOutlineInput) {
+  const jobPayload = await request<{
+    job: {
+      id: string
+      status: 'queued' | 'running' | 'ready' | 'failed'
+      error?: string
+    }
+  }>('/api/ai/deck-outline-jobs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  const jobId = jobPayload.job.id
+  let status = jobPayload.job.status
+  let error = jobPayload.job.error
+
+  for (let attempt = 0; attempt < 75 && status !== 'ready' && status !== 'failed'; attempt += 1) {
+    const payload = await request<{
+      job: {
+        id: string
+        status: 'queued' | 'running' | 'ready' | 'failed'
+        error?: string
+      }
+      outline?: AiDeckOutline
+      provider?: AiProviderStatus
+    }>(`/api/ai/deck-outline-jobs/${jobId}`)
+    status = payload.job.status
+    error = payload.job.error
+    if (payload.outline && payload.provider) {
+      return { outline: payload.outline, provider: payload.provider }
+    }
+    if (status !== 'ready' && status !== 'failed') {
+      await delay(2000)
+    }
+  }
+
+  throw new Error(error ?? 'Deck preview generation timed out. Please try again.')
+}
+
+export async function downloadAiDeckPptx(input: AiDeckOutlineInput) {
+  const jobPayload = await request<{
+    job: {
+      id: string
+      status: 'queued' | 'running' | 'ready' | 'failed'
+      error?: string
+    }
+  }>('/api/ai/deck-jobs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  const jobId = jobPayload.job.id
+  let status = jobPayload.job.status
+  let error = jobPayload.job.error
+
+  for (let attempt = 0; attempt < 75 && status !== 'ready' && status !== 'failed'; attempt += 1) {
+    const payload = await request<{
+      job: {
+        id: string
+        status: 'queued' | 'running' | 'ready' | 'failed'
+        error?: string
+      }
+    }>(`/api/ai/deck-jobs/${jobId}`)
+    status = payload.job.status
+    error = payload.job.error
+    if (status !== 'ready' && status !== 'failed') {
+      await delay(2000)
+    }
+  }
+
+  if (status !== 'ready') {
+    throw new Error(error ?? 'PowerPoint generation timed out. Please try again.')
+  }
+
+  const headers = new Headers()
+  const token = readStoredToken()
+  if (token) {
+    headers.set('authorization', `Bearer ${token}`)
+  }
+
+  const response = await fetch(apiUrl(`/api/ai/deck-jobs/${jobId}/pptx`), {
+    headers,
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken()
+    }
+    const error = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(error?.error ?? `Request failed: ${response.status}`)
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'think-together-training-deck.pptx'
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  window.URL.revokeObjectURL(url)
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

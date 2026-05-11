@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pptxgen from 'pptxgenjs';
 import type { DeckOutline, DeckSlide } from './aiDeck';
 
@@ -21,6 +24,8 @@ const SHAPE = {
 
 const MARGIN_X = 0.55;
 const FOOTER_Y = 7.05;
+const LOGO_PATH = join(dirname(fileURLToPath(import.meta.url)), 'assets', 'think-together-logo.png');
+const LOGO_ASPECT_RATIO = 557 / 262;
 
 export async function renderDeckPptx(outline: DeckOutline): Promise<Buffer> {
   const PptxGen = ((pptxgen as unknown as { default?: typeof pptxgen }).default ?? pptxgen) as typeof pptxgen;
@@ -47,7 +52,7 @@ export async function renderDeckPptx(outline: DeckOutline): Promise<Buffer> {
 function addTitleSlide(pptx: pptxgen, outline: DeckOutline) {
   const slide = pptx.addSlide();
   addBackground(slide);
-  addBrandMark(slide, 0.65, 0.55, 0.85);
+  addBrandLogo(slide, 0.65, 0.58, 1.55);
   slide.addShape(SHAPE.rect, {
     x: 9.65,
     y: 0,
@@ -420,9 +425,9 @@ function addFacilitatorHandoffSlide(pptx: pptxgen, outline: DeckOutline) {
 function addSourceSlide(pptx: pptxgen, outline: DeckOutline) {
   const slide = pptx.addSlide();
   addBackground(slide);
-  addBrandMark(slide, 0.62, 0.55, 0.55);
+  addBrandLogo(slide, 0.62, 0.55, 1.35);
   slide.addText('Source Artifacts', {
-    x: 1.35,
+    x: 2.18,
     y: 0.6,
     w: 5.5,
     h: 0.48,
@@ -483,7 +488,22 @@ function addBackground(slide: pptxgen.Slide) {
   });
 }
 
-function addBrandMark(slide: pptxgen.Slide, x: number, y: number, size: number) {
+function addBrandLogo(slide: pptxgen.Slide, x: number, y: number, width: number) {
+  if (existsSync(LOGO_PATH)) {
+    slide.addImage({
+      path: LOGO_PATH,
+      x,
+      y,
+      w: width,
+      h: width / LOGO_ASPECT_RATIO,
+    });
+    return;
+  }
+
+  addBrandFallback(slide, x, y, Math.min(width, 0.85));
+}
+
+function addBrandFallback(slide: pptxgen.Slide, x: number, y: number, size: number) {
   slide.addShape(SHAPE.roundRect, {
     x,
     y,
@@ -507,9 +527,9 @@ function addBrandMark(slide: pptxgen.Slide, x: number, y: number, size: number) 
 }
 
 function addTopBar(slide: pptxgen.Slide, slideNumber: number, total: number) {
-  addBrandMark(slide, 0.56, 0.25, 0.43);
+  addBrandLogo(slide, 0.56, 0.25, 1.0);
   slide.addText('THINK TOGETHER', {
-    x: 1.12,
+    x: 1.72,
     y: 0.27,
     w: 2.2,
     h: 0.2,
@@ -519,7 +539,7 @@ function addTopBar(slide: pptxgen.Slide, slideNumber: number, total: number) {
     margin: 0,
   });
   slide.addText('Program Induction | PBIS', {
-    x: 1.12,
+    x: 1.72,
     y: 0.47,
     w: 3.2,
     h: 0.2,

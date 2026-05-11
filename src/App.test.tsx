@@ -73,6 +73,46 @@ beforeEach(() => {
         ],
       })
     }
+    if (url.endsWith('/api/ai/providers')) {
+      return json({
+        providers: [
+          { id: 'openai', label: 'OpenAI GPT-5.2', configured: true, mode: 'sync', note: 'Premium planner' },
+          { id: 'gemini', label: 'Gemini Flash', configured: true, mode: 'sync', note: 'Fast default' },
+          { id: 'claude', label: 'Claude Sonnet', configured: false, mode: 'sync', note: 'Premium planner' },
+          { id: 'notebooklm_enterprise', label: 'NotebookLM Enterprise', configured: false, mode: 'source-workspace', note: 'Source workspace' },
+        ],
+      })
+    }
+    if (url.endsWith('/api/ai/deck-outline-jobs')) {
+      return json({ job: { id: 'outline-job-1', status: 'queued' } })
+    }
+    if (url.endsWith('/api/ai/deck-outline-jobs/outline-job-1')) {
+      return json({
+        job: { id: 'outline-job-1', status: 'ready' },
+        outline: {
+          provider: 'openai',
+          model: 'gpt-5.2-test',
+          title: 'Effective Lesson Delivery',
+          audience: 'Program leaders',
+          durationMinutes: 45,
+          learningObjectives: ['Practice 10:2 delivery'],
+          slides: [
+            {
+              title: 'Open with practice',
+              objective: 'Use PBIS language in a short routine.',
+              talkingPoints: ['Teach expectation'],
+              activityPrompt: 'Pair practice an attention getter.',
+              facilitatorNotes: 'Keep it human-led.',
+              sourceRefs: [{ artifact: 'PBIS PPT Master.pptx', locator: 'Slide 4' }],
+            },
+          ],
+          handoffNotes: ['Review before export.'],
+          sourceArtifacts: ['PBIS PPT Master.pptx', 'SOP_Program Induction.pdf'],
+          generatedAt: '2026-05-10T00:00:00.000Z',
+        },
+        provider: { id: 'openai', label: 'OpenAI GPT-5.2', configured: true, mode: 'sync', note: 'Premium planner' },
+      })
+    }
     return json({})
   }))
 })
@@ -85,12 +125,12 @@ function json(body: unknown) {
 }
 
 describe('App', () => {
-  it('renders the integrated learner workspace by default', async () => {
+  it('lands admin users in the operations workspace by default', async () => {
     render(<App />)
 
-    expect(await screen.findByRole('banner', { name: /Think Together training MVP/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Welcome/i })).toBeInTheDocument()
-    expect(screen.getByText('Program Induction - PBIS')).toBeInTheDocument()
+    expect(await screen.findByRole('navigation', { name: /MVP workspace/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
   })
 
   it('switches between learner, coach, admin, and plan views', async () => {
@@ -104,6 +144,9 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
     expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Training Deck Studio' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Generate preview' }))
+    expect(await screen.findByRole('heading', { name: 'Effective Lesson Delivery' })).toBeInTheDocument()
   })
 
   it('uses learner profile from getMe and skips admin calls for learner users', async () => {
@@ -141,7 +184,8 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Welcome, Real Learner' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Welcome/i })).toHaveTextContent('Real Learner')
+    expect(screen.getByText('Program Induction - PBIS')).toBeInTheDocument()
     expect(screen.getByText('Palm Site')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
     await waitFor(() => {
@@ -190,7 +234,9 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
     fireEvent.click(screen.getByRole('button', { name: 'Accept invite' }))
 
-    expect(await screen.findByRole('heading', { name: 'Welcome, Invited Learner' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Welcome/i })).toBeInTheDocument()
+    expect(screen.getByText('Program Induction - PBIS')).toBeInTheDocument()
+    expect(screen.getAllByText('Invited Learner').length).toBeGreaterThan(0)
     expect(window.localStorage.getItem('think-training-token')).toBe('learner-token')
     expect(fetchMock.mock.calls[0][0]).toBe('/api/auth/accept-invite')
   })

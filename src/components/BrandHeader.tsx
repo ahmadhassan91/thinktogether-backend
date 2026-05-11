@@ -1,4 +1,5 @@
 import '../styles/design-system.css'
+import thinkTogetherLogo from '../assets/think-together-logo.png'
 
 export type BrandHeaderMode = 'learner' | 'admin'
 
@@ -19,9 +20,7 @@ export function BrandHeader({ mode, showAdminMode = true, onModeChange }: BrandH
   return (
     <header className="tt-brand-header" aria-label="Think Together training MVP">
       <div className="tt-brand-header__identity">
-        <div className="tt-brand-header__logo" aria-hidden="true">
-          TT
-        </div>
+        <img className="tt-brand-header__logo" src={thinkTogetherLogo} alt="Think Together logo" />
         <div>
           <p className="tt-brand-header__eyebrow">Think Together</p>
           <h1 className="tt-brand-header__title" aria-label="Think Together Training MVP">

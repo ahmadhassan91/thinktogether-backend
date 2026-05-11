@@ -3,10 +3,13 @@ import {
   acceptInvite,
   createAdminCohort,
   createAdminLearner,
+  createAiDeckOutline,
   createLearnerInvite,
+  downloadAiDeckPptx,
   downloadAdminExport,
   getAdminCohorts,
   getAdminLearners,
+  getAiProviders,
   getMe,
   revokeLearnerInvite,
   storeToken,
@@ -174,6 +177,75 @@ describe('admin management client', () => {
     expect(anchor.href).toBe('blob:export')
     expect(anchor.download).toBe('think-completion-export.csv')
     expect(click).toHaveBeenCalled()
+  })
+
+  it('loads AI providers, posts deck outlines, and downloads PPTX with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock
+      .mockResolvedValueOnce(json({
+        providers: [{ id: 'openai', label: 'OpenAI GPT-5.2', configured: true, mode: 'sync', note: 'Premium planner' }],
+      }))
+      .mockResolvedValueOnce(json({
+        job: { id: 'outline-job-1', status: 'running' },
+      }))
+      .mockResolvedValueOnce(json({
+        job: { id: 'outline-job-1', status: 'ready' },
+        outline: { title: 'PBIS Refresher', provider: 'openai', slides: [] },
+        provider: { id: 'openai', label: 'OpenAI GPT-5.2', configured: true, mode: 'sync', note: 'Premium planner' },
+      }))
+      .mockResolvedValueOnce(json({
+        job: { id: 'deck-job-1', status: 'ready' },
+      }))
+      .mockResolvedValueOnce(Promise.resolve(new Response(new Blob(['pptx']), {
+        status: 200,
+        headers: { 'content-disposition': 'attachment; filename="pbis-refresher.pptx"' },
+      })))
+
+    await expect(getAiProviders()).resolves.toMatchObject({
+      providers: [{ id: 'openai', configured: true }],
+    })
+    await expect(createAiDeckOutline({
+      provider: 'openai',
+      topic: 'PBIS refresher for program leaders',
+      audience: 'Program leaders',
+      durationMinutes: 45,
+      slideCount: 6,
+    })).resolves.toMatchObject({ outline: { title: 'PBIS Refresher' } })
+    await downloadAiDeckPptx({
+      provider: 'openai',
+      topic: 'PBIS refresher for program leaders',
+      audience: 'Program leaders',
+      durationMinutes: 45,
+      slideCount: 6,
+    })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/ai/providers')
+    const deckInit = fetchMock.mock.calls[1][1] as RequestInit
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/ai/deck-outline-jobs')
+    expect(deckInit.method).toBe('POST')
+    expect(deckInit.body).toBe(JSON.stringify({
+      provider: 'openai',
+      topic: 'PBIS refresher for program leaders',
+      audience: 'Program leaders',
+      durationMinutes: 45,
+      slideCount: 6,
+    }))
+    expect((deckInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/ai/deck-outline-jobs/outline-job-1')
+    const jobInit = fetchMock.mock.calls[3][1] as RequestInit
+    expect(fetchMock.mock.calls[3][0]).toBe('/api/ai/deck-jobs')
+    expect(jobInit.method).toBe('POST')
+    expect(jobInit.body).toBe(JSON.stringify({
+      provider: 'openai',
+      topic: 'PBIS refresher for program leaders',
+      audience: 'Program leaders',
+      durationMinutes: 45,
+      slideCount: 6,
+    }))
+    expect((jobInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+    const pptxInit = fetchMock.mock.calls[4][1] as RequestInit
+    expect(fetchMock.mock.calls[4][0]).toBe('/api/ai/deck-jobs/deck-job-1/pptx')
+    expect((pptxInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 })
 
