@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 output
+outputs
+.playwright-cli
+.netlify
 __pycache__
 *.py[cod]
 *.local

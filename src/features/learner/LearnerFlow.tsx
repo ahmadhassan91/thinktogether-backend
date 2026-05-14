@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   answerKnowledgeCheck,
   canCompletePath,
@@ -63,6 +63,7 @@ type LearnerFlowProps = {
   initialCompletedModuleIds?: string[]
   onCompleteModule?: (moduleId: string) => Promise<void>
   onAnswerKnowledgeCheck?: (moduleId: string, answer: string) => Promise<void>
+  surveyPanel?: ReactNode
 }
 
 export function LearnerFlow({
@@ -74,6 +75,7 @@ export function LearnerFlow({
   initialCompletedModuleIds = [],
   onCompleteModule,
   onAnswerKnowledgeCheck,
+  surveyPanel,
 }: LearnerFlowProps) {
   const orderedModules = useMemo(() => sortModules(modules), [modules])
   const [verified, setVerified] = useState(false)
@@ -91,10 +93,19 @@ export function LearnerFlow({
   const completeCount = progress.filter(
     (item) => requiredModuleIds.has(item.moduleId) && item.status === 'complete',
   ).length
+  const progressPercent = requiredCount === 0 ? 100 : Math.round((completeCount / requiredCount) * 100)
   const nextModuleId = getNextModuleId(orderedModules, progress)
   const currentModule =
     orderedModules.find((module) => module.id === nextModuleId) ??
     orderedModules.find((module) => module.required)
+  const currentModuleIndex = currentModule
+    ? orderedModules.findIndex((module) => module.id === currentModule.id)
+    : -1
+  const currentModuleSequence = currentModule?.sequence ?? Number.POSITIVE_INFINITY
+  const nextRequiredPosition =
+    currentModuleIndex >= 0
+      ? orderedModules.filter((module) => module.required && module.sequence <= currentModuleSequence).length
+      : requiredCount
 
   const advanceAfterCompletion = (nextProgress: LearnerProgress[]) => {
     const nextId = getNextModuleId(orderedModules, nextProgress)
@@ -184,61 +195,130 @@ export function LearnerFlow({
 
   if (receipt) {
     return (
-      <main aria-labelledby="receipt-title">
-        <h1 id="receipt-title">Completion Receipt</h1>
-        <p>{pathTitle}</p>
-        <p>Score: {receipt.score}%</p>
-        <p>Status: {receipt.passFail === 'pass' ? 'Complete' : 'Needs review'}</p>
-        <p>Confirmation: {receipt.confirmationCode}</p>
+      <main aria-labelledby="receipt-title" className="learner-receipt">
+        <header className="learner-receipt__header">
+          <p className="learner-receipt__eyebrow">Training saved</p>
+          <h1 id="receipt-title">Completion Receipt</h1>
+          <p>{pathTitle}</p>
+        </header>
+
+        <section aria-label="Completion confirmation" className="learner-receipt__confirmation">
+          <p>Your PBIS training completion has been recorded for {learner.name}.</p>
+          <dl className="learner-receipt__details">
+            <div>
+              <dt>Score</dt>
+              <dd>Score: {receipt.score}%</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>Status: {receipt.passFail === 'pass' ? 'Complete' : 'Needs review'}</dd>
+            </div>
+            <div>
+              <dt>Confirmation</dt>
+              <dd>Confirmation: {receipt.confirmationCode}</dd>
+            </div>
+            <div>
+              <dt>Content version</dt>
+              <dd>Version: {receipt.contentVersion}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section aria-label="Next step" className="learner-receipt__next-step">
+          <h2>Next step</h2>
+          <p>
+            A Program Pro will review completion evidence and any survey response before closing the induction step.
+          </p>
+          {surveyPanel ? <div className="learner-receipt__survey">{surveyPanel}</div> : null}
+        </section>
       </main>
     )
   }
 
   if (!verified) {
     return (
-      <main aria-labelledby="welcome-title">
-        <h1 id="welcome-title">Welcome, {learner.name}</h1>
-        <p>{pathTitle}</p>
-        <dl>
-          <div>
-            <dt>Role</dt>
-            <dd>{learner.role ?? 'Learner'}</dd>
+      <main aria-labelledby="welcome-title" className="learner-home">
+        <section className="learner-home__primary">
+          <p className="learner-flow__eyebrow">Mobile training</p>
+          <h1 id="welcome-title">Welcome, {learner.name}</h1>
+          <p>{pathTitle}</p>
+          <div className="learner-home__actions">
+            <button type="button" onClick={() => setVerified(true)}>
+              Verify and start
+            </button>
+            <span>{requiredCount} required modules</span>
           </div>
-          <div>
-            <dt>Region</dt>
-            <dd>{learner.region ?? 'Assigned region'}</dd>
-          </div>
-          <div>
-            <dt>Site</dt>
-            <dd>{learner.site ?? 'Assigned site'}</dd>
-          </div>
-        </dl>
-        <button type="button" onClick={() => setVerified(true)}>
-          Verify and start
-        </button>
+        </section>
+        <section aria-label="Learner profile" className="learner-home__profile">
+          <strong>Learner profile</strong>
+          <dl>
+            <div>
+              <dt>Role</dt>
+              <dd>{learner.role ?? 'Learner'}</dd>
+            </div>
+            <div>
+              <dt>Region</dt>
+              <dd>{learner.region ?? 'Assigned region'}</dd>
+            </div>
+            <div>
+              <dt>Site</dt>
+              <dd>{learner.site ?? 'Assigned site'}</dd>
+            </div>
+          </dl>
+        </section>
       </main>
     )
   }
 
   return (
-    <main aria-labelledby="path-title">
-      <header>
-        <h1 id="path-title">{pathTitle}</h1>
-        <p>
-          Progress: {completeCount} of {requiredCount} required modules complete
-        </p>
+    <main aria-labelledby="path-title" className="learner-workspace">
+      <header className="learner-workspace__header">
+        <div>
+          <p className="learner-flow__eyebrow">Assigned path</p>
+          <h1 id="path-title">{pathTitle}</h1>
+        </div>
+        <p>Progress: {completeCount} of {requiredCount} required modules complete</p>
       </header>
 
-      <section aria-label="Learning path">
-        <ol>
+      <section aria-label="Learning path progress" className="learner-progress">
+        <div className="learner-progress__summary" role="list">
+          <div role="listitem">
+            <span>{completeCount}/{requiredCount}</span>
+            <strong>Required complete</strong>
+          </div>
+          <div role="listitem">
+            <span>{progressPercent}%</span>
+            <strong>Progress</strong>
+          </div>
+          <div role="listitem">
+            <span>
+              {requiredCount === 0 ? 'Done' : `${Math.min(nextRequiredPosition, requiredCount)}/${requiredCount}`}
+            </span>
+            <strong>Next module</strong>
+          </div>
+        </div>
+        <div
+          aria-label={`${progressPercent}% complete`}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={progressPercent}
+          className="learner-progress__bar"
+          role="progressbar"
+        >
+          <span style={{ inlineSize: `${progressPercent}%` }} />
+        </div>
+      </section>
+
+      <section aria-label="Module status list" className="module-rail">
+        <ol className="module-rail__list">
           {orderedModules.map((module) => {
             const moduleProgress = progress.find((item) => item.moduleId === module.id)
             const state = moduleProgress?.status ?? 'locked'
 
             return (
-              <li key={module.id}>
-                <span>{module.title}</span>
-                <span>{stateLabel(state)}</span>
+              <li className="module-rail__item" data-state={state} key={module.id}>
+                <span className="module-rail__title">{module.title}</span>
+                <span className="module-rail__status">{stateLabel(state)}</span>
               </li>
             )
           })}
@@ -246,18 +326,28 @@ export function LearnerFlow({
       </section>
 
       {currentModule ? (
-        <section aria-labelledby="module-title">
-          <h2 id="module-title">{currentModule.title}</h2>
-          <p>{currentModule.estimatedMinutes} min</p>
-          {currentModule.content.map((item) => (
-            <p key={item}>{item}</p>
-          ))}
+        <section aria-labelledby="module-title" className="module-card" data-state="current">
+          <header className="module-card__header">
+            <div>
+              <p className="learner-flow__eyebrow">Active module</p>
+              <h2 id="module-title">{currentModule.title}</h2>
+            </div>
+            <p className="module-card__meta">
+              Module {Math.max(currentModuleIndex + 1, 1)} of {orderedModules.length} | {currentModule.estimatedMinutes}{' '}
+              min
+            </p>
+          </header>
+          <div className="module-card__content">
+            {currentModule.content.map((item) => (
+              <p key={item}>{item}</p>
+            ))}
+          </div>
 
           {currentModule.action?.type === 'quiz' ? (
-            <fieldset>
+            <fieldset className="knowledge-check">
               <legend>{currentModule.action.prompt}</legend>
               {currentModule.action.choices.map((choice) => (
-                <label key={choice}>
+                <label data-selected={selectedAnswer === choice} key={choice}>
                   <input
                     checked={selectedAnswer === choice}
                     name="knowledge-check"
@@ -267,12 +357,18 @@ export function LearnerFlow({
                   {choice}
                 </label>
               ))}
-              <button disabled={!selectedAnswer || submitting} onClick={submitQuiz} type="button">
+              <button
+                className="module-card__action"
+                disabled={!selectedAnswer || submitting}
+                onClick={submitQuiz}
+                type="button"
+              >
                 {submitting ? 'Saving' : 'Submit answer'}
               </button>
             </fieldset>
           ) : (
-            <div>
+            <div className="practice-card">
+              <p>{currentModule.action?.prompt}</p>
               <label>
                 Practice response
                 <textarea
@@ -281,13 +377,21 @@ export function LearnerFlow({
                   value={practiceResponse}
                 />
               </label>
-              <p>{currentModule.action?.prompt}</p>
-              <button disabled={!practiceResponse.trim() || submitting} onClick={submitPractice} type="button">
+              <button
+                className="module-card__action"
+                disabled={!practiceResponse.trim() || submitting}
+                onClick={submitPractice}
+                type="button"
+              >
                 {submitting ? 'Saving' : 'Submit practice'}
               </button>
             </div>
           )}
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? (
+            <p className="learner-flow__error" role="alert">
+              {error}
+            </p>
+          ) : null}
         </section>
       ) : null}
     </main>

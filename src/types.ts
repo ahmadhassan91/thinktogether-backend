@@ -5,6 +5,19 @@ export type SourceRef = {
   locator: string
 }
 
+export type SourceArtifact = {
+  id: string
+  artifact: string
+  title: string
+  filePath: string
+  documentType: 'sop' | 'knowledge-check' | 'presentation'
+  department: string
+  effectiveDate?: string
+  reviewDate?: string | null
+  contentVersion: ContentVersion
+  extractedAt: string
+}
+
 export type Learner = {
   id: string
   firstName: string

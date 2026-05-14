@@ -3,11 +3,10 @@ import { randomUUID } from 'node:crypto';
 import {
   CONTENT_VERSION,
   cohorts,
-  getLearningPath,
   learners,
   participants,
   trainingKnowledgeCheckItems,
-  trainingModules,
+  trainingLearningPaths,
   trainingScenarios,
 } from '../src/data/trainingData';
 import type { KnowledgeCheckItem, LearningPath, Module, Scenario } from '../src/types';
@@ -76,6 +75,7 @@ async function dropAll(db: AppDatabase) {
     DROP TABLE IF EXISTS knowledge_attempts;
     DROP TABLE IF EXISTS progress;
     DROP TABLE IF EXISTS facilitator_feedback;
+    DROP TABLE IF EXISTS admin_audit_events;
     DROP TABLE IF EXISTS clearance_records;
     DROP TABLE IF EXISTS attendance_records;
     DROP TABLE IF EXISTS participants;
@@ -378,6 +378,47 @@ const migrations = [
     CREATE INDEX IF NOT EXISTS learner_invites_revoked_idx ON learner_invites(learner_id, revoked_at);
   `,
   },
+  {
+    id: '005_facilitator_feedback_survey_guard',
+    name: 'Learner survey duplicate guard',
+    sql: `
+    WITH ranked_surveys AS (
+      SELECT
+        id,
+        ROW_NUMBER() OVER (PARTITION BY learner_id, path_id ORDER BY created_at DESC, id DESC) AS row_number
+      FROM facilitator_feedback
+      WHERE survey_submitted
+    )
+    UPDATE facilitator_feedback
+    SET survey_submitted = false
+    FROM ranked_surveys
+    WHERE facilitator_feedback.id = ranked_surveys.id
+      AND ranked_surveys.row_number > 1;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS facilitator_feedback_unique_submitted_survey_idx
+      ON facilitator_feedback(learner_id, path_id)
+      WHERE survey_submitted;
+  `,
+  },
+  {
+    id: '006_admin_audit_events',
+    name: 'Admin audit event trail',
+    sql: `
+    CREATE TABLE IF NOT EXISTS admin_audit_events (
+      id UUID PRIMARY KEY,
+      actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS admin_audit_events_created_idx ON admin_audit_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS admin_audit_events_actor_idx ON admin_audit_events(actor_user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS admin_audit_events_entity_idx ON admin_audit_events(entity_type, entity_id);
+  `,
+  },
 ] satisfies Array<{ id: string; name: string; sql: string }>;
 
 async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
@@ -391,55 +432,57 @@ async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
     ['admin-1', seed.adminEmail.toLowerCase(), 'Think Together Admin', adminHash, 'admin', now],
   );
 
-  const path = getLearningPath();
-  await db.query(
-    `INSERT INTO learning_paths
-      (id, title, description, audience, content_version, module_ids, source_refs)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (id) DO UPDATE SET
-      title = EXCLUDED.title,
-      description = EXCLUDED.description,
-      audience = EXCLUDED.audience,
-      content_version = EXCLUDED.content_version,
-      module_ids = EXCLUDED.module_ids,
-      source_refs = EXCLUDED.source_refs`,
-    [path.id, path.title, path.description, path.audience, path.contentVersion, toJson(path.moduleIds), toJson(path.sourceRefs)],
-  );
-
-  for (const moduleItem of trainingModules) {
+  for (const path of trainingLearningPaths) {
     await db.query(
-      `INSERT INTO modules
-        (id, path_id, title, order_index, estimated_minutes, summary, learning_objectives,
-         key_points, source_refs, scenario_ids, knowledge_check_item_ids, required_for_completion, content_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `INSERT INTO learning_paths
+        (id, title, description, audience, content_version, module_ids, source_refs)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (id) DO UPDATE SET
         title = EXCLUDED.title,
-        order_index = EXCLUDED.order_index,
-        estimated_minutes = EXCLUDED.estimated_minutes,
-        summary = EXCLUDED.summary,
-        learning_objectives = EXCLUDED.learning_objectives,
-        key_points = EXCLUDED.key_points,
-        source_refs = EXCLUDED.source_refs,
-        scenario_ids = EXCLUDED.scenario_ids,
-        knowledge_check_item_ids = EXCLUDED.knowledge_check_item_ids,
-        required_for_completion = EXCLUDED.required_for_completion,
-        content_version = EXCLUDED.content_version`,
-      [
-        moduleItem.id,
-        path.id,
-        moduleItem.title,
-        moduleItem.order,
-        moduleItem.estimatedMinutes,
-        moduleItem.content.summary,
-        toJson(moduleItem.content.learningObjectives),
-        toJson(moduleItem.content.keyPoints),
-        toJson(moduleItem.content.sourceRefs),
-        toJson(moduleItem.scenarioIds),
-        toJson(moduleItem.knowledgeCheckItemIds),
-        moduleItem.requiredForCompletion,
-        moduleItem.content.contentVersion,
-      ],
+        description = EXCLUDED.description,
+        audience = EXCLUDED.audience,
+        content_version = EXCLUDED.content_version,
+        module_ids = EXCLUDED.module_ids,
+        source_refs = EXCLUDED.source_refs`,
+      [path.id, path.title, path.description, path.audience, path.contentVersion, toJson(path.moduleIds), toJson(path.sourceRefs)],
     );
+
+    for (const moduleItem of path.modules) {
+      await db.query(
+        `INSERT INTO modules
+          (id, path_id, title, order_index, estimated_minutes, summary, learning_objectives,
+           key_points, source_refs, scenario_ids, knowledge_check_item_ids, required_for_completion, content_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (id) DO UPDATE SET
+          path_id = EXCLUDED.path_id,
+          title = EXCLUDED.title,
+          order_index = EXCLUDED.order_index,
+          estimated_minutes = EXCLUDED.estimated_minutes,
+          summary = EXCLUDED.summary,
+          learning_objectives = EXCLUDED.learning_objectives,
+          key_points = EXCLUDED.key_points,
+          source_refs = EXCLUDED.source_refs,
+          scenario_ids = EXCLUDED.scenario_ids,
+          knowledge_check_item_ids = EXCLUDED.knowledge_check_item_ids,
+          required_for_completion = EXCLUDED.required_for_completion,
+          content_version = EXCLUDED.content_version`,
+        [
+          moduleItem.id,
+          path.id,
+          moduleItem.title,
+          moduleItem.order,
+          moduleItem.estimatedMinutes,
+          moduleItem.content.summary,
+          toJson(moduleItem.content.learningObjectives),
+          toJson(moduleItem.content.keyPoints),
+          toJson(moduleItem.content.sourceRefs),
+          toJson(moduleItem.scenarioIds),
+          toJson(moduleItem.knowledgeCheckItemIds),
+          moduleItem.requiredForCompletion,
+          moduleItem.content.contentVersion,
+        ],
+      );
+    }
   }
 
   for (const scenario of trainingScenarios) {

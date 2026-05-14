@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   CONTENT_VERSION,
+  SITE_LEAD_ONBOARDING_CONTENT_VERSION,
   getKnowledgeCheckItems,
   getLearnerProgressSummary,
   getLearningPath,
   getModuleById,
   getScenarioById,
+  getTrainingSourceArtifact,
+  sharedSourceArtifactNames,
+  trainingLearningPaths,
+  trainingSourceLibrary,
 } from './trainingData'
 import type { CompletionRecord, PracticeSubmission } from '../types'
 
@@ -66,22 +71,50 @@ describe('PBIS MVP training data', () => {
   })
 
   it('maps the shared client artifacts into the MVP source library', () => {
-    const path = getLearningPath()
     const allRefs = [
-      ...path.sourceRefs,
-      ...path.modules.flatMap((module) => module.content.sourceRefs),
-      ...path.modules.flatMap((module) => module.scenarioIds.flatMap((id) => getScenarioById(id)?.sourceRefs ?? [])),
+      ...trainingLearningPaths.flatMap((path) => path.sourceRefs),
+      ...trainingLearningPaths.flatMap((path) => path.modules.flatMap((module) => module.content.sourceRefs)),
+      ...trainingLearningPaths.flatMap((path) => path.modules.flatMap((module) => module.scenarioIds.flatMap((id) => getScenarioById(id)?.sourceRefs ?? []))),
       ...getKnowledgeCheckItems().flatMap((item) => item.sourceRefs),
     ]
 
-    expect(allRefs.map((ref) => ref.artifact)).toEqual(expect.arrayContaining([
+    expect(trainingSourceLibrary).toHaveLength(6)
+    expect(trainingSourceLibrary.every((source) => source.filePath.startsWith('/Users/clustox1/Documents/Think/'))).toBe(true)
+    expect(trainingSourceLibrary.every((source) => source.contentVersion && source.extractedAt)).toBe(true)
+    expect(sharedSourceArtifactNames).toEqual([
       'SOP_Program Induction.pdf',
       'SOP_Site Lead Onboarding.pdf',
       'KNOWLEDGE CHECK_Back to School 2025.pdf',
       'PBIS PPT Master.pptx',
       'FINAL - PBIS EC2 - updated 11.4.25.pptx',
       'PBIS part 3 PPT Template.pptx',
-    ]))
+    ])
+    expect(allRefs.map((ref) => ref.artifact)).toEqual(expect.arrayContaining(sharedSourceArtifactNames))
+    expect(getTrainingSourceArtifact('sop-site-lead-onboarding')).toEqual(expect.objectContaining({
+      artifact: 'SOP_Site Lead Onboarding.pdf',
+      title: 'Site Lead Onboarding Program',
+      documentType: 'sop',
+      effectiveDate: 'February 2026',
+    }))
+  })
+
+  it('adds a minimal Site Lead Onboarding v0 path sourced to the Site Lead SOP', () => {
+    const path = getLearningPath('site-lead-onboarding-v0')
+
+    expect(path.id).toBe('site-lead-onboarding-v0')
+    expect(path.title).toBe('Site Lead Onboarding v0')
+    expect(path.contentVersion).toBe(SITE_LEAD_ONBOARDING_CONTENT_VERSION)
+    expect(path.moduleIds).toEqual([
+      'slo-purpose-and-role',
+      'slo-stakeholder-responsibilities',
+      'slo-cycle-and-makeup',
+      'slo-attendance-reporting-clearance',
+    ])
+    expect(path.modules.map((module) => module.id)).toEqual(path.moduleIds)
+    expect(path.modules.every((module) => module.content.contentVersion === SITE_LEAD_ONBOARDING_CONTENT_VERSION)).toBe(true)
+    expect(path.modules.every((module) => module.content.sourceRefs.every((ref) => ref.artifact === 'SOP_Site Lead Onboarding.pdf'))).toBe(true)
+    expect(path.modules.map((module) => module.content.summary).join(' ')).toContain('four-week cycle')
+    expect(path.modules.map((module) => module.content.summary).join(' ')).toContain('clearance email')
   })
 
   it('summarizes learner progress from completion and practice records', () => {

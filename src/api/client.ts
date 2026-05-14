@@ -1,4 +1,4 @@
-import type { KnowledgeCheckItem, LearningPath, Module, Scenario } from '../types'
+import type { KnowledgeCheckItem, LearningPath, Module, Scenario, SourceArtifact, SourceRef } from '../types'
 
 const TOKEN_KEY = 'think-training-token'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
@@ -181,6 +181,102 @@ export type AiDeckOutline = {
   generatedAt: string
 }
 
+export type SourceLibraryPayload = {
+  sourceLibraryVersion: string
+  artifacts: SourceArtifact[]
+  learningPaths: Array<{
+    id: string
+    title: string
+    audience: string
+    contentVersion: string
+    moduleCount: number
+    sourceRefs: SourceRef[]
+  }>
+}
+
+export type SourceUsageSummaryPayload = {
+  totals: {
+    artifacts: number
+    referencedArtifacts: number
+    sourceRefs: number
+    paths: number
+    modules: number
+  }
+  artifacts: Array<{
+    artifact: SourceArtifact
+    totalReferences: number
+    uniqueLocatorCount: number
+    pathReferenceCount: number
+    moduleReferenceCount: number
+    scenarioReferenceCount: number
+    knowledgeCheckReferenceCount: number
+    referencedByPathIds: string[]
+    referencedByModuleIds: string[]
+    locators: string[]
+  }>
+}
+
+export type SourceQaFlagsPayload = {
+  artifactsNotReferencedByModules: SourceArtifact[]
+  modulesWithNoSourceRefs: Array<{ moduleId: string; moduleTitle: string; pathId: string; pathTitle: string }>
+  pathsWithNoModules: Array<{ pathId: string; pathTitle: string }>
+  sourceRefsWithoutLibraryArtifact: Array<{ sourceRef: SourceRef; contexts: unknown[] }>
+}
+
+export type SourceSearchPayload = {
+  results: Array<{
+    type: 'artifact' | 'path' | 'module' | 'scenario' | 'knowledge-check'
+    id: string
+    title: string
+    artifact: SourceArtifact
+    locator: string
+    sourceRef: SourceRef
+    excerpt: string
+    relevanceScore: number
+  }>
+}
+
+export type AdminAuditEvent = {
+  id: string
+  actorUserId: string | null
+  actorEmail: string | null
+  actorName: string | null
+  action: string
+  entityType: string
+  entityId: string
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+export type TrainingSurveyInput = {
+  pathId: string
+  facilitatorId?: string
+  score: number
+  notes: string
+}
+
+export type TrainingSurveyPayload = {
+  survey: {
+    id: string
+    learnerId: string
+    facilitatorId: string
+    pathId: string
+    rating: 'ready' | 'needs-coaching' | 'not-ready'
+    score: number
+    notes: string
+    surveySubmitted: boolean
+    submittedAt: string
+  }
+}
+
+export type KnowledgeAssistantPayload = {
+  answer: string
+  sourceBasis: string[]
+  coachingNote: string
+  confidence: 'Source-backed' | 'Partially source-backed' | 'Not found in provided sources'
+  status: 'answered' | 'not_found'
+}
+
 export function readStoredToken() {
   return window.localStorage.getItem(TOKEN_KEY)
 }
@@ -219,6 +315,22 @@ export async function getLearningPath(pathId = 'program-induction-pbis') {
   return request<LearningPathPayload>(`/api/learning-paths/${pathId}`)
 }
 
+export async function getSourceLibrary() {
+  return request<SourceLibraryPayload>('/api/source-library')
+}
+
+export async function getSourceUsageSummary() {
+  return request<SourceUsageSummaryPayload>('/api/admin/source-intelligence/summary')
+}
+
+export async function getSourceQaFlags() {
+  return request<SourceQaFlagsPayload>('/api/admin/source-intelligence/qa-flags')
+}
+
+export async function searchSourceIntelligence(query: string) {
+  return request<SourceSearchPayload>(`/api/admin/source-intelligence/search?query=${encodeURIComponent(query)}`)
+}
+
 export async function getProgress() {
   return request<ProgressPayload>('/api/progress')
 }
@@ -244,8 +356,26 @@ export async function scoreScenario(scenarioId: string, response: string) {
   })
 }
 
+export async function submitTrainingSurvey(input: TrainingSurveyInput) {
+  return request<TrainingSurveyPayload>('/api/surveys/training', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function askKnowledgeAssistant(question: string) {
+  return request<KnowledgeAssistantPayload>('/api/knowledge-assistant/answer', {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  })
+}
+
 export async function getAdminDashboard() {
   return request<AdminDashboardPayload>('/api/admin/dashboard')
+}
+
+export async function getAdminAuditEvents() {
+  return request<{ events: AdminAuditEvent[] }>('/api/admin/audit-events')
 }
 
 export async function getAdminLearners() {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
   acceptInvite,
+  askKnowledgeAssistant,
   answerKnowledgeCheck,
   clearToken,
   completeModule,
@@ -12,16 +13,23 @@ import {
   downloadAiDeckPptx,
   downloadAdminExport,
   getAdminDashboard,
+  getAdminAuditEvents,
   getAdminCohorts,
   getAdminLearners,
   getAiProviders,
   getLearningPath,
   getMe,
   getProgress,
+  getSourceQaFlags,
+  getSourceLibrary,
+  getSourceUsageSummary,
   login,
   readStoredToken,
   revokeLearnerInvite,
   scoreScenario,
+  searchSourceIntelligence,
+  submitTrainingSurvey,
+  type AdminAuditEvent,
   type AdminCohort,
   type AdminDashboardPayload,
   type AdminLearner,
@@ -31,6 +39,10 @@ import {
   type AuthUser,
   type LearningPathPayload,
   type LearnerProfile,
+  type SourceLibraryPayload,
+  type SourceQaFlagsPayload,
+  type SourceSearchPayload,
+  type SourceUsageSummaryPayload,
   type ProgressPayload,
 } from './api/client'
 import { StatusChip } from './components/StatusChip'
@@ -42,11 +54,12 @@ import { LearnerFlow } from './features/learner/LearnerFlow'
 import type { Learner, LearnerModule } from './features/learner/learnerProgress'
 import thinkTogetherLogo from './assets/think-together-logo.png'
 
-type WorkspaceView = 'learner' | 'practice' | 'admin' | 'plan'
+type WorkspaceView = 'learner' | 'practice' | 'assist' | 'admin' | 'plan'
 
 const navItems: Array<{ view: WorkspaceView; label: string }> = [
   { view: 'learner', label: 'Learn' },
   { view: 'practice', label: 'Practice' },
+  { view: 'assist', label: 'Assist' },
   { view: 'admin', label: 'Admin' },
   { view: 'plan', label: 'Plan' },
 ]
@@ -65,27 +78,41 @@ function App() {
   const [dashboard, setDashboard] = useState<AdminDashboardPayload | null>(null)
   const [adminLearners, setAdminLearners] = useState<AdminLearner[]>([])
   const [adminCohorts, setAdminCohorts] = useState<AdminCohort[]>([])
+  const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>([])
+  const [sourceLibrary, setSourceLibrary] = useState<SourceLibraryPayload | null>(null)
+  const [sourceUsageSummary, setSourceUsageSummary] = useState<SourceUsageSummaryPayload | null>(null)
+  const [sourceQaFlags, setSourceQaFlags] = useState<SourceQaFlagsPayload | null>(null)
   const [loadError, setLoadError] = useState('')
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get('invite'), [])
 
   const refreshWorkspace = useCallback(async (currentUser: AuthUser) => {
-    const [pathPayload, progressPayload] = await Promise.all([getLearningPath(), getProgress()])
+    const [pathPayload, progressPayload, sourcePayload] = await Promise.all([getLearningPath(), getProgress(), getSourceLibrary()])
     setContent(pathPayload)
     setProgress(progressPayload)
+    setSourceLibrary(sourcePayload)
 
     if (currentUser.role === 'admin') {
-      const [dashboardPayload, learnersPayload, cohortsPayload] = await Promise.all([
+      const [dashboardPayload, learnersPayload, cohortsPayload, auditPayload, usagePayload, qaFlagsPayload] = await Promise.all([
         getAdminDashboard(),
         getAdminLearners(),
         getAdminCohorts(),
+        getAdminAuditEvents(),
+        getSourceUsageSummary(),
+        getSourceQaFlags(),
       ])
       setDashboard(dashboardPayload)
       setAdminLearners(learnersPayload.learners)
       setAdminCohorts(cohortsPayload.cohorts)
+      setAdminAuditEvents(auditPayload.events)
+      setSourceUsageSummary(usagePayload)
+      setSourceQaFlags(qaFlagsPayload)
     } else {
       setDashboard(null)
       setAdminLearners([])
       setAdminCohorts([])
+      setAdminAuditEvents([])
+      setSourceUsageSummary(null)
+      setSourceQaFlags(null)
     }
   }, [])
 
@@ -142,6 +169,9 @@ function App() {
     setDashboard(null)
     setAdminLearners([])
     setAdminCohorts([])
+    setAdminAuditEvents([])
+    setSourceUsageSummary(null)
+    setSourceQaFlags(null)
   }
 
   const handleAcceptInvite = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -289,9 +319,13 @@ function App() {
           dashboard,
           adminLearners,
           adminCohorts,
+          adminAuditEvents,
           learner: learner ?? toLearnerIdentity(user),
           isAdmin: user.role === 'admin',
           contentVersion: content.path.contentVersion,
+          sourceLibrary,
+          sourceUsageSummary,
+          sourceQaFlags,
           onCompleteModule: async (moduleId) => {
             await completeModule(moduleId)
             setProgress(await getProgress())
@@ -308,18 +342,29 @@ function App() {
           },
           onCreateLearner: async (learner) => {
             await createAdminLearner(learner)
-            const [learnersPayload, dashboardPayload] = await Promise.all([getAdminLearners(), getAdminDashboard()])
+            const [learnersPayload, dashboardPayload, auditPayload] = await Promise.all([
+              getAdminLearners(),
+              getAdminDashboard(),
+              getAdminAuditEvents(),
+            ])
             setAdminLearners(learnersPayload.learners)
             setDashboard(dashboardPayload)
+            setAdminAuditEvents(auditPayload.events)
           },
           onCreateCohort: async (cohort) => {
             await createAdminCohort(cohort)
-            const [cohortsPayload, dashboardPayload] = await Promise.all([getAdminCohorts(), getAdminDashboard()])
+            const [cohortsPayload, dashboardPayload, auditPayload] = await Promise.all([
+              getAdminCohorts(),
+              getAdminDashboard(),
+              getAdminAuditEvents(),
+            ])
             setAdminCohorts(cohortsPayload.cohorts)
             setDashboard(dashboardPayload)
+            setAdminAuditEvents(auditPayload.events)
           },
           onCreateLearnerInvite: async (learnerId) => {
             const invitePayload = await createLearnerInvite(learnerId)
+            setAdminAuditEvents((await getAdminAuditEvents()).events)
             if (invitePayload.learner) {
               setAdminLearners((items) => items.map((item) => (item.id === learnerId ? invitePayload.learner! : item)))
             } else if (invitePayload.invite?.inviteStatus) {
@@ -334,8 +379,15 @@ function App() {
           onRevokeLearnerInvite: async (learnerId) => {
             const revokePayload = await revokeLearnerInvite(learnerId)
             setAdminLearners((items) => items.map((item) => (item.id === learnerId ? revokePayload.learner : item)))
+            setAdminAuditEvents((await getAdminAuditEvents()).events)
           },
           onDownloadExport: downloadAdminExport,
+          onSubmitSurvey: async (score, notes) => {
+            await submitTrainingSurvey({ pathId: content.path.id, score, notes })
+            if (user.role === 'admin') {
+              setDashboard(await getAdminDashboard())
+            }
+          },
           })}
         </div>
       </main>
@@ -351,9 +403,13 @@ function renderView({
   dashboard,
   adminLearners,
   adminCohorts,
+  adminAuditEvents,
   learner,
   isAdmin,
   contentVersion,
+  sourceLibrary,
+  sourceUsageSummary,
+  sourceQaFlags,
   onCompleteModule,
   onAnswerKnowledgeCheck,
   onCreateLearner,
@@ -361,6 +417,7 @@ function renderView({
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
+  onSubmitSurvey,
 }: {
   view: WorkspaceView
   learnerModules: LearnerModule[]
@@ -369,9 +426,13 @@ function renderView({
   dashboard: AdminDashboardPayload | null
   adminLearners: AdminLearner[]
   adminCohorts: AdminCohort[]
+  adminAuditEvents: AdminAuditEvent[]
   learner: Learner
   isAdmin: boolean
   contentVersion: string
+  sourceLibrary: SourceLibraryPayload | null
+  sourceUsageSummary: SourceUsageSummaryPayload | null
+  sourceQaFlags: SourceQaFlagsPayload | null
   onCompleteModule: (moduleId: string) => Promise<void>
   onAnswerKnowledgeCheck: (moduleId: string, answer: string) => Promise<void>
   onCreateLearner: Parameters<typeof AdminDashboard>[0]['onCreateLearner']
@@ -379,9 +440,14 @@ function renderView({
   onCreateLearnerInvite: Parameters<typeof AdminDashboard>[0]['onCreateLearnerInvite']
   onRevokeLearnerInvite: Parameters<typeof AdminDashboard>[0]['onRevokeLearnerInvite']
   onDownloadExport: Parameters<typeof AdminDashboard>[0]['onDownloadExport']
+  onSubmitSurvey: (score: number, notes: string) => Promise<void>
 }) {
   if (view === 'practice') {
     return <ScenarioCoach scenario={coachScenario} onScoreScenario={scoreScenario} />
+  }
+
+  if (view === 'assist') {
+    return <KnowledgeAssistantPanel sourceLibrary={sourceLibrary} />
   }
 
   if (view === 'admin' && isAdmin) {
@@ -390,6 +456,7 @@ function renderView({
         dashboard={dashboard ?? undefined}
         learners={adminLearners}
         managementCohorts={adminCohorts}
+        auditEvents={adminAuditEvents}
         onCreateLearner={onCreateLearner}
         onCreateCohort={onCreateCohort}
         onCreateLearnerInvite={onCreateLearnerInvite}
@@ -400,7 +467,14 @@ function renderView({
   }
 
   if (view === 'plan') {
-    return <MilestonePlan isAdmin={isAdmin} />
+    return (
+      <MilestonePlan
+        isAdmin={isAdmin}
+        sourceLibrary={sourceLibrary}
+        sourceUsageSummary={sourceUsageSummary}
+        sourceQaFlags={sourceQaFlags}
+      />
+    )
   }
 
   return (
@@ -412,6 +486,7 @@ function renderView({
       initialCompletedModuleIds={progress.completedModuleIds}
       onCompleteModule={onCompleteModule}
       onAnswerKnowledgeCheck={onAnswerKnowledgeCheck}
+      surveyPanel={<TrainingSurveyPanel onSubmitSurvey={onSubmitSurvey} />}
     />
   )
 }
@@ -477,7 +552,17 @@ function toCoachScenario(payload: LearningPathPayload): CoachScenario {
   }
 }
 
-function MilestonePlan({ isAdmin }: { isAdmin: boolean }) {
+function MilestonePlan({
+  isAdmin,
+  sourceLibrary,
+  sourceUsageSummary,
+  sourceQaFlags,
+}: {
+  isAdmin: boolean
+  sourceLibrary: SourceLibraryPayload | null
+  sourceUsageSummary: SourceUsageSummaryPayload | null
+  sourceQaFlags: SourceQaFlagsPayload | null
+}) {
   const mvp = getMilestonesByPhase('MVP')
   const phaseTwo = getMilestonesByPhase('Phase 2')
   const [providers, setProviders] = useState<AiProviderStatus[]>([])
@@ -504,22 +589,18 @@ function MilestonePlan({ isAdmin }: { isAdmin: boolean }) {
       .catch((error) => setDeckError(error instanceof Error ? error.message : 'Unable to load AI providers.'))
   }, [isAdmin])
 
-  useEffect(() => {
-    if (deckProviders.length === 0 || deckProviders.some((item) => item.id === provider)) return
-    const fallback = deckProviders.find((item) => item.id === 'openai' && item.configured)
-      ?? deckProviders.find((item) => item.id === 'gemini' && item.configured)
-      ?? deckProviders[0]
-    setProvider(fallback.id)
-  }, [deckProviders, provider])
-
-  const selectedProvider = deckProviders.find((item) => item.id === provider)
+  const fallbackProvider = deckProviders.find((item) => item.id === 'openai' && item.configured)
+    ?? deckProviders.find((item) => item.id === 'gemini' && item.configured)
+    ?? deckProviders[0]
+  const effectiveProvider = deckProviders.some((item) => item.id === provider) ? provider : fallbackProvider?.id ?? provider
+  const selectedProvider = deckProviders.find((item) => item.id === effectiveProvider)
 
   const handleGenerateDeck = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setDeckError('')
     setIsGenerating(true)
     try {
-      const payload = await createAiDeckOutline({ provider, topic, audience, durationMinutes, slideCount })
+      const payload = await createAiDeckOutline({ provider: effectiveProvider, topic, audience, durationMinutes, slideCount })
       setOutline(payload.outline)
     } catch (error) {
       setDeckError(error instanceof Error ? error.message : 'Unable to generate deck outline.')
@@ -532,7 +613,7 @@ function MilestonePlan({ isAdmin }: { isAdmin: boolean }) {
     setDeckError('')
     setIsDownloadingPptx(true)
     try {
-      await downloadAiDeckPptx({ provider, topic, audience, durationMinutes, slideCount })
+      await downloadAiDeckPptx({ provider: effectiveProvider, topic, audience, durationMinutes, slideCount })
     } catch (error) {
       setDeckError(error instanceof Error ? error.message : 'Unable to generate PowerPoint.')
     } finally {
@@ -556,6 +637,13 @@ function MilestonePlan({ isAdmin }: { isAdmin: boolean }) {
         <MilestoneList title="Phase 2" milestones={phaseTwo} status="locked" />
       </section>
 
+      <SourceIntelligencePanel
+        isAdmin={isAdmin}
+        sourceUsageSummary={sourceUsageSummary}
+        sourceQaFlags={sourceQaFlags}
+      />
+      <SourceLibraryPanel sourceLibrary={sourceLibrary} />
+
       {isAdmin ? (
         <section className="deck-studio" aria-labelledby="deck-studio-title">
           <div>
@@ -578,7 +666,7 @@ function MilestonePlan({ isAdmin }: { isAdmin: boolean }) {
           <form className="deck-form" onSubmit={handleGenerateDeck}>
             <label>
               Provider
-              <select value={provider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
+              <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
                 <option value="openai">OpenAI GPT-5.2</option>
                 <option value="gemini">Gemini Flash</option>
                 <option value="claude">Claude Sonnet</option>
@@ -658,6 +746,222 @@ function MilestonePlan({ isAdmin }: { isAdmin: boolean }) {
         </section>
       ) : null}
     </main>
+  )
+}
+
+function KnowledgeAssistantPanel({ sourceLibrary }: { sourceLibrary: SourceLibraryPayload | null }) {
+  const [question, setQuestion] = useState('What happens if a Site Lead misses a session?')
+  const [answer, setAnswer] = useState<Awaited<ReturnType<typeof askKnowledgeAssistant>> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleAsk = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      setAnswer(await askKnowledgeAssistant(question))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to answer from the source library.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <main className="assistant-view" aria-labelledby="assistant-title">
+      <header>
+        <p className="app-hero__label">Source-grounded assistant</p>
+        <h1 id="assistant-title">Ask the Training Library</h1>
+        <p>
+          Answers are restricted to the shared SOPs, PBIS decks, and knowledge-check material. If the source
+          is weak, the assistant refuses instead of inventing policy.
+        </p>
+      </header>
+      <form className="assistant-form" onSubmit={handleAsk}>
+        <label>
+          Question
+          <textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
+        </label>
+        <button disabled={loading || question.trim().length < 4} type="submit">
+          {loading ? 'Checking sources' : 'Ask assistant'}
+        </button>
+      </form>
+      {error ? <p role="alert">{error}</p> : null}
+      {answer ? (
+        <section className="assistant-answer" data-status={answer.status} aria-label="Assistant answer">
+          <div>
+            <strong>{answer.confidence}</strong>
+            <p>{answer.answer}</p>
+          </div>
+          <div>
+            <h2>Source basis</h2>
+            {answer.sourceBasis.length ? (
+              <ul>
+                {answer.sourceBasis.map((source) => <li key={source}>{source}</li>)}
+              </ul>
+            ) : (
+              <p>No approved source found.</p>
+            )}
+          </div>
+          <small>{answer.coachingNote}</small>
+        </section>
+      ) : null}
+      {sourceLibrary ? (
+        <p className="assistant-footnote">
+          Searching {sourceLibrary.artifacts.length} artifacts across {sourceLibrary.learningPaths.length} learning paths.
+        </p>
+      ) : null}
+    </main>
+  )
+}
+
+function TrainingSurveyPanel({ onSubmitSurvey }: { onSubmitSurvey: (score: number, notes: string) => Promise<void> }) {
+  const [score, setScore] = useState(5)
+  const [notes, setNotes] = useState('The module helped me practice before going onsite.')
+  const [status, setStatus] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setStatus('')
+    setSubmitting(true)
+    try {
+      await onSubmitSurvey(score, notes)
+      setStatus('Survey submitted. Thank you for helping improve weekly training delivery.')
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : 'Unable to submit survey.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form className="training-survey" onSubmit={handleSubmit} aria-label="Training survey">
+      <h2>Training survey</h2>
+      <label>
+        Facilitator/session rating
+        <input min={1} max={5} step={1} type="number" value={score} onChange={(event) => setScore(Number(event.target.value))} />
+      </label>
+      <label>
+        Feedback for Program Pros
+        <textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+      </label>
+      <button disabled={submitting || notes.trim().length < 3} type="submit">
+        {submitting ? 'Submitting survey' : 'Submit survey'}
+      </button>
+      {status ? <p role="status">{status}</p> : null}
+    </form>
+  )
+}
+
+function SourceIntelligencePanel({
+  isAdmin,
+  sourceUsageSummary,
+  sourceQaFlags,
+}: {
+  isAdmin: boolean
+  sourceUsageSummary: SourceUsageSummaryPayload | null
+  sourceQaFlags: SourceQaFlagsPayload | null
+}) {
+  const [query, setQuery] = useState('10:2 practice PBIS')
+  const [searchResults, setSearchResults] = useState<SourceSearchPayload['results']>([])
+  const [searchError, setSearchError] = useState('')
+  const [searching, setSearching] = useState(false)
+
+  if (!isAdmin || !sourceUsageSummary || !sourceQaFlags) return null
+
+  const qaIssueCount =
+    (sourceQaFlags.artifactsNotReferencedByModules?.length ?? 0) +
+    (sourceQaFlags.modulesWithNoSourceRefs?.length ?? 0) +
+    (sourceQaFlags.pathsWithNoModules?.length ?? 0) +
+    (sourceQaFlags.sourceRefsWithoutLibraryArtifact?.length ?? 0)
+  const sourceTotals = sourceUsageSummary.totals ?? { artifacts: 0, modules: 0, paths: 0, referencedArtifacts: 0, sourceRefs: 0 }
+
+  const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSearchError('')
+    setSearching(true)
+    try {
+      setSearchResults((await searchSourceIntelligence(query)).results.slice(0, 5))
+    } catch (caught) {
+      setSearchError(caught instanceof Error ? caught.message : 'Unable to search source intelligence.')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  return (
+    <section className="source-intelligence" aria-labelledby="source-intelligence-title">
+      <div>
+        <p className="app-hero__label">Evidence map</p>
+        <h2 id="source-intelligence-title">Artifact Coverage and Source Search</h2>
+        <p>
+          Every learning path, scenario, and generated deck can be traced back to the SOPs, PBIS decks,
+          and knowledge check shared by Think Together.
+        </p>
+      </div>
+      <div className="source-intelligence__metrics" aria-label="Source intelligence metrics">
+        <span><strong>{sourceTotals.artifacts}</strong> artifacts loaded</span>
+        <span><strong>{sourceTotals.sourceRefs}</strong> source references</span>
+        <span><strong>{sourceTotals.modules}</strong> modules mapped</span>
+        <span data-status={qaIssueCount ? 'warning' : 'ok'}><strong>{qaIssueCount}</strong> QA flags</span>
+      </div>
+      <form className="source-intelligence__search" onSubmit={handleSearch}>
+        <label>
+          Search approved sources
+          <input value={query} onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <button disabled={searching || query.trim().length < 2} type="submit">
+          {searching ? 'Searching' : 'Search evidence'}
+        </button>
+      </form>
+      {searchError ? <p role="alert">{searchError}</p> : null}
+      {searchResults.length ? (
+        <div className="source-intelligence__results" aria-label="Source search results">
+          {searchResults.map((result) => (
+            <article key={`${result.type}-${result.id}-${result.locator}`}>
+              <strong>{result.title}</strong>
+              <span>{result.artifact.artifact} · {result.locator}</span>
+              <p>{result.excerpt}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function SourceLibraryPanel({ sourceLibrary }: { sourceLibrary: SourceLibraryPayload | null }) {
+  if (!sourceLibrary) return null
+  const artifacts = sourceLibrary.artifacts ?? []
+  const learningPaths = sourceLibrary.learningPaths ?? []
+
+  return (
+    <section className="source-library" aria-labelledby="source-library-title">
+      <div>
+        <p className="app-hero__label">Shared artifacts</p>
+        <h2 id="source-library-title">Source Library</h2>
+        <p>{sourceLibrary.sourceLibraryVersion}</p>
+      </div>
+      <div className="source-library__grid">
+        {artifacts.map((artifact) => (
+          <article key={artifact.id}>
+            <strong>{artifact.artifact}</strong>
+            <span>{artifact.documentType}</span>
+            <p>{artifact.title}</p>
+          </article>
+        ))}
+      </div>
+      <div className="source-library__paths">
+        {learningPaths.map((path) => (
+          <article key={path.id}>
+            <strong>{path.title}</strong>
+            <span>{path.moduleCount} modules · {path.audience}</span>
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 

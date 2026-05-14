@@ -13,10 +13,86 @@ import type {
   Participant,
   PracticeSubmission,
   Scenario,
+  SourceArtifact,
   SourceRef,
 } from '../types'
 
 export const CONTENT_VERSION = 'pbis-mvp-2026-05-08'
+export const SOURCE_LIBRARY_VERSION = 'think-training-source-library-2026-05-13'
+export const SITE_LEAD_ONBOARDING_CONTENT_VERSION = 'site-lead-onboarding-v0-2026-05-13'
+
+export const trainingSourceLibrary: SourceArtifact[] = [
+  {
+    id: 'sop-program-induction',
+    artifact: 'SOP_Program Induction.pdf',
+    title: 'Program Induction Training Plan and Process',
+    filePath: '/Users/clustox1/Documents/Think/retrainingaiclustoxthinktogether/SOP_Program Induction.pdf',
+    documentType: 'sop',
+    department: 'Program Pros',
+    effectiveDate: 'February 2026',
+    reviewDate: null,
+    contentVersion: SOURCE_LIBRARY_VERSION,
+    extractedAt: '2026-05-13T00:00:00.000Z',
+  },
+  {
+    id: 'sop-site-lead-onboarding',
+    artifact: 'SOP_Site Lead Onboarding.pdf',
+    title: 'Site Lead Onboarding Program',
+    filePath: '/Users/clustox1/Documents/Think/retrainingaiclustoxthinktogether/SOP_Site Lead Onboarding.pdf',
+    documentType: 'sop',
+    department: 'Program Pros',
+    effectiveDate: 'February 2026',
+    reviewDate: null,
+    contentVersion: SOURCE_LIBRARY_VERSION,
+    extractedAt: '2026-05-13T00:00:00.000Z',
+  },
+  {
+    id: 'knowledge-check-back-to-school-2025',
+    artifact: 'KNOWLEDGE CHECK_Back to School 2025.pdf',
+    title: 'Back to School 2025 Knowledge Check',
+    filePath: '/Users/clustox1/Documents/Think/retrainingaiclustoxthinktogether (1)/KNOWLEDGE CHECK_Back to School 2025.pdf',
+    documentType: 'knowledge-check',
+    department: 'Program Pros',
+    contentVersion: SOURCE_LIBRARY_VERSION,
+    extractedAt: '2026-05-13T00:00:00.000Z',
+  },
+  {
+    id: 'pbis-ppt-master',
+    artifact: 'PBIS PPT Master.pptx',
+    title: 'PBIS 2025-2026 Program Induction',
+    filePath: '/Users/clustox1/Documents/Think/retrainingaiclustoxthinktogether (1)/PBIS PPT Master.pptx',
+    documentType: 'presentation',
+    department: 'Program Pros',
+    contentVersion: SOURCE_LIBRARY_VERSION,
+    extractedAt: '2026-05-13T00:00:00.000Z',
+  },
+  {
+    id: 'pbis-ec2-updated-2025-11-04',
+    artifact: 'FINAL - PBIS EC2 - updated 11.4.25.pptx',
+    title: 'PBIS EC2',
+    filePath: '/Users/clustox1/Documents/Think/retrainingaiclustoxthinktogether (2)/FINAL - PBIS EC2 - updated 11.4.25.pptx',
+    documentType: 'presentation',
+    department: 'Program Pros',
+    contentVersion: SOURCE_LIBRARY_VERSION,
+    extractedAt: '2026-05-13T00:00:00.000Z',
+  },
+  {
+    id: 'pbis-part-3-template',
+    artifact: 'PBIS part 3 PPT Template.pptx',
+    title: 'PBIS Part 3',
+    filePath: '/Users/clustox1/Documents/Think/retrainingaiclustoxthinktogether (2)/PBIS part 3 PPT Template.pptx',
+    documentType: 'presentation',
+    department: 'Program Pros',
+    contentVersion: SOURCE_LIBRARY_VERSION,
+    extractedAt: '2026-05-13T00:00:00.000Z',
+  },
+]
+
+export const sharedSourceArtifactNames = trainingSourceLibrary.map((source) => source.artifact)
+
+export function getTrainingSourceArtifact(artifact: string): SourceArtifact | undefined {
+  return trainingSourceLibrary.find((source) => source.artifact === artifact || source.id === artifact)
+}
 
 const programInductionSopRef = (locator: string): SourceRef => ({
   artifact: 'SOP_Program Induction.pdf',
@@ -253,6 +329,89 @@ const modules: Module[] = [
     },
     scenarioIds: [],
     knowledgeCheckItemIds: ['kc-commitment'],
+    requiredForCompletion: true,
+  },
+]
+
+const siteLeadOnboardingModules: Module[] = [
+  {
+    id: 'slo-purpose-and-role',
+    title: 'SLO Purpose and Role Readiness',
+    order: 1,
+    estimatedMinutes: 6,
+    content: {
+      moduleId: 'slo-purpose-and-role',
+      contentVersion: SITE_LEAD_ONBOARDING_CONTENT_VERSION,
+      summary: 'Site Lead Onboarding prepares newly hired or promoted full-time Site Leads for leadership expectations, program culture, safety, and consistent site implementation.',
+      learningObjectives: ['Describe the purpose of Site Lead Onboarding', 'Connect the Site Lead role to staff coaching and student success'],
+      keyPoints: ['SLO is the standardized onboarding framework for new Site Leads', 'Participants complete the full series within their first 30 days'],
+      sourceRefs: [
+        siteLeadSopRef('Pages 1-2: Introduction, purpose, scope, and 30-day completion expectation'),
+        siteLeadSopRef('Page 2: Outcomes for Site Lead foundational knowledge and site implementation'),
+      ],
+    },
+    scenarioIds: [],
+    knowledgeCheckItemIds: [],
+    requiredForCompletion: true,
+  },
+  {
+    id: 'slo-stakeholder-responsibilities',
+    title: 'Stakeholder Responsibilities',
+    order: 2,
+    estimatedMinutes: 7,
+    content: {
+      moduleId: 'slo-stakeholder-responsibilities',
+      contentVersion: SITE_LEAD_ONBOARDING_CONTENT_VERSION,
+      summary: 'SLO depends on coordinated responsibilities across HR, Talent Development and Learning, Regional Supervisors, Site Leads, Program Pros, Program Quality and Compliance, Student Data, and Insights and Evaluation.',
+      learningObjectives: ['Identify who owns enrollment, facilitation, supervision, attendance, and reporting', 'Name the Site Lead participation expectations'],
+      keyPoints: ['HR supports ADP role setup for auto-enrollment', 'Regional Supervisors arrange coverage and track completion evidence', 'Site Leads attend, participate, complete assignments, and communicate conflicts at least 24 hours ahead'],
+      sourceRefs: [
+        siteLeadSopRef('Pages 3-4: Responsibilities by HR, Talent Development and Learning, Regional Supervisors, Site Leads, and Program Pros'),
+        siteLeadSopRef('Page 4: Conflict notification and virtual camera expectations'),
+      ],
+    },
+    scenarioIds: [],
+    knowledgeCheckItemIds: [],
+    requiredForCompletion: true,
+  },
+  {
+    id: 'slo-cycle-and-makeup',
+    title: 'Four-Week Cycle and Make-Up Process',
+    order: 3,
+    estimatedMinutes: 6,
+    content: {
+      moduleId: 'slo-cycle-and-makeup',
+      contentVersion: SITE_LEAD_ONBOARDING_CONTENT_VERSION,
+      summary: 'SLO is delivered during a four-week cycle with Monday and Tuesday course delivery, Week 4 make-up sessions when needed, and LMS reminder notifications tied to the learning path.',
+      learningObjectives: ['Explain the four-week SLO cycle', 'Describe how missed sessions move into make-up support'],
+      keyPoints: ['New Site Leads are auto-enrolled through ADP role assignment', 'Courses are delivered Monday and Tuesday during each cycle', 'Holiday adjustments and missed courses are handled through Week 4 make-up sessions'],
+      sourceRefs: [
+        siteLeadSopRef('Page 5: Auto-enrollment and learning path process'),
+        siteLeadSopRef('Pages 5-6: Monday and Tuesday facilitation schedule and Week 4 make-up sessions'),
+      ],
+    },
+    scenarioIds: [],
+    knowledgeCheckItemIds: [],
+    requiredForCompletion: true,
+  },
+  {
+    id: 'slo-attendance-reporting-clearance',
+    title: 'Attendance, Reporting, and Clearance',
+    order: 4,
+    estimatedMinutes: 8,
+    content: {
+      moduleId: 'slo-attendance-reporting-clearance',
+      contentVersion: SITE_LEAD_ONBOARDING_CONTENT_VERSION,
+      summary: 'Facilitators track SLO attendance through the LMS, supervisors monitor completion evidence, Insights and Evaluation shares dashboards, and Program Pros sends the clearance email at the close of the monthly cycle.',
+      learningObjectives: ['Run and interpret the LMS attendance reporting workflow', 'Connect completion evidence to clearance communication'],
+      keyPoints: ['Attendance is tracked in the LMS SLO Learning Path', 'Reports can be filtered by date, group, department, or learner', 'Clearance email is sent at the close of each monthly cycle'],
+      sourceRefs: [
+        siteLeadSopRef('Pages 4-5: LMS updates, training survey feedback, dashboards, and clearance email'),
+        siteLeadSopRef('Pages 6-7: Attendance report steps and export options'),
+      ],
+    },
+    scenarioIds: [],
+    knowledgeCheckItemIds: [],
     requiredForCompletion: true,
   },
 ]
@@ -512,16 +671,35 @@ const learningPath: LearningPath = {
   ],
 }
 
+const siteLeadOnboardingPath: LearningPath = {
+  id: 'site-lead-onboarding-v0',
+  title: 'Site Lead Onboarding v0',
+  description: 'Minimal Site Lead Onboarding path for validating SOP-sourced leadership onboarding content.',
+  audience: 'Newly hired or promoted full-time Site Leads',
+  contentVersion: SITE_LEAD_ONBOARDING_CONTENT_VERSION,
+  moduleIds: siteLeadOnboardingModules.map((moduleItem) => moduleItem.id),
+  modules: siteLeadOnboardingModules,
+  sourceRefs: [
+    siteLeadSopRef('Pages 1-2: Site Lead Onboarding purpose, scope, outcomes, and 30-day completion requirement'),
+    siteLeadSopRef('Pages 3-5: Stakeholder responsibilities and participant expectations'),
+    siteLeadSopRef('Pages 5-7: Auto-enrollment, four-week facilitation schedule, make-up sessions, LMS attendance reporting, and clearance email'),
+  ],
+}
+
+const learningPaths = [learningPath, siteLeadOnboardingPath]
+
 export const trainingModules = modules
+export const siteLeadOnboardingTrainingModules = siteLeadOnboardingModules
 export const trainingScenarios = scenarios
 export const trainingKnowledgeCheckItems = knowledgeCheckItems
+export const trainingLearningPaths = learningPaths
 
-export function getLearningPath(): LearningPath {
-  return learningPath
+export function getLearningPath(pathId = 'program-induction-pbis'): LearningPath {
+  return learningPaths.find((path) => path.id === pathId) ?? learningPath
 }
 
 export function getModuleById(moduleId: string): Module | undefined {
-  return modules.find((moduleItem) => moduleItem.id === moduleId)
+  return learningPaths.flatMap((path) => path.modules).find((moduleItem) => moduleItem.id === moduleId)
 }
 
 export function getScenarioById(scenarioId: string): Scenario | undefined {

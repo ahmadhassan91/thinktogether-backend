@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { SOURCE_LIBRARY_VERSION, trainingLearningPaths, trainingSourceLibrary } from '../src/data/trainingData';
 import { scoreScenarioResponse } from '../src/features/coach/coachEngine';
 import { generateDeckOutline, getAiProviderStatuses, type DeckOutline } from './aiDeck';
 import { createInviteToken, createSessionToken, hashPassword, hashToken, verifyPassword } from './auth';
@@ -15,7 +16,13 @@ import {
   type AppDatabase,
   type SeedConfig,
 } from './db';
+import { answerKnowledgeAssistantQuestion } from './knowledgeAssistant';
 import { renderDeckPptx } from './pptxDeck';
+import {
+  computeSourceQaFlags,
+  searchSourceIntelligence,
+  summarizeSourceUsage,
+} from './sourceIntelligence';
 
 export type AppOptions = {
   databaseUrl: string;
@@ -79,8 +86,19 @@ const knowledgeAnswerSchema = z.object({
   selectedAnswer: z.string().min(1),
 });
 
+const knowledgeAssistantQuestionSchema = z.object({
+  question: z.string().trim().min(4).max(500),
+});
+
 const scenarioScoreSchema = z.object({
   response: z.string().min(20).max(4000),
+});
+
+const learnerSurveySchema = z.object({
+  pathId: z.string().trim().min(1),
+  facilitatorId: z.string().trim().min(1).max(120).optional(),
+  score: z.coerce.number().min(1).max(5),
+  notes: z.string().trim().max(2000).default(''),
 });
 
 const adminCreateLearnerSchema = z.object({
@@ -105,6 +123,10 @@ const aiDeckOutlineSchema = z.object({
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
   durationMinutes: z.coerce.number().int().min(10).max(180).default(45),
   slideCount: z.coerce.number().int().min(4).max(14).default(8),
+});
+
+const sourceSearchSchema = z.object({
+  query: z.string().trim().min(2).max(160),
 });
 
 export async function createApp(options: AppOptions): Promise<AppHandle> {
@@ -244,6 +266,34 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     return res.json(content);
   });
 
+  app.get('/api/source-library', authenticate, (_req, res) => {
+    res.json({
+      sourceLibraryVersion: SOURCE_LIBRARY_VERSION,
+      artifacts: trainingSourceLibrary,
+      learningPaths: trainingLearningPaths.map((path) => ({
+        id: path.id,
+        title: path.title,
+        audience: path.audience,
+        contentVersion: path.contentVersion,
+        moduleCount: path.modules.length,
+        sourceRefs: path.sourceRefs,
+      })),
+    });
+  });
+
+  app.get('/api/admin/source-intelligence/summary', authenticate, requireAdmin, (_req, res) => {
+    res.json(summarizeSourceUsage());
+  });
+
+  app.get('/api/admin/source-intelligence/qa-flags', authenticate, requireAdmin, (_req, res) => {
+    res.json(computeSourceQaFlags());
+  });
+
+  app.get('/api/admin/source-intelligence/search', authenticate, requireAdmin, (req, res) => {
+    const payload = sourceSearchSchema.parse(req.query);
+    res.json({ results: searchSourceIntelligence(payload.query) });
+  });
+
   app.get('/api/progress', authenticate, async (req: AuthedRequest, res) => {
     const userId = req.user?.id;
     const progressResult = await db.query(
@@ -317,6 +367,11 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     });
   });
 
+  app.post('/api/knowledge-assistant/answer', authenticate, (req, res) => {
+    const payload = knowledgeAssistantQuestionSchema.parse(req.body);
+    res.json(answerKnowledgeAssistantQuestion(payload.question));
+  });
+
   app.post('/api/scenarios/:scenarioId/score', authenticate, async (req: AuthedRequest, res) => {
     const payload = scenarioScoreSchema.parse(req.body);
     const scenario = await readScenario(db, String(req.params.scenarioId));
@@ -360,6 +415,59 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     res.json({ id, scenarioId: scenario.id, createdAt, ...scored });
   });
 
+  app.post('/api/surveys/training', authenticate, async (req: AuthedRequest, res) => {
+    if (req.user?.role !== 'learner' || !req.user.learnerId) {
+      return res.status(403).json({ error: 'Learner role required' });
+    }
+
+    const payload = learnerSurveySchema.parse(req.body);
+    const pathResult = await db.query('SELECT id FROM learning_paths WHERE id = $1', [payload.pathId]);
+    if (!pathResult.rows[0]) return res.status(404).json({ error: 'Learning path not found' });
+
+    const learnerResult = await db.query(
+      `SELECT l.id, l.assigned_path_ids, c.facilitator_ids
+       FROM learners l
+       JOIN cohorts c ON c.id = l.cohort_id
+       WHERE l.id = $1`,
+      [req.user.learnerId],
+    );
+    const learnerRow = learnerResult.rows[0] as LearnerSurveyAccessRow | undefined;
+    if (!learnerRow || !learnerRow.assigned_path_ids.includes(payload.pathId)) {
+      return res.status(403).json({ error: 'Learning path is not assigned to this learner' });
+    }
+
+    const facilitatorId = payload.facilitatorId ?? learnerRow.facilitator_ids[0];
+    if (!facilitatorId) {
+      return res.status(400).json({ error: 'A facilitator is required for survey submission' });
+    }
+    if (payload.facilitatorId && learnerRow.facilitator_ids.length > 0 && !learnerRow.facilitator_ids.includes(payload.facilitatorId)) {
+      return res.status(400).json({ error: 'Facilitator is not assigned to this learner cohort' });
+    }
+
+    const createdAt = new Date().toISOString();
+    const surveyResult = await db.query(
+      `INSERT INTO facilitator_feedback
+         (id, learner_id, facilitator_id, path_id, rating, score, notes, survey_submitted, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8)
+       ON CONFLICT (learner_id, path_id) WHERE survey_submitted DO NOTHING
+       RETURNING id, learner_id, facilitator_id, path_id, rating, score, notes, survey_submitted, created_at`,
+      [
+        randomUUID(),
+        req.user.learnerId,
+        facilitatorId,
+        payload.pathId,
+        surveyRatingFromScore(payload.score),
+        payload.score,
+        payload.notes,
+        createdAt,
+      ],
+    );
+    const row = surveyResult.rows[0] as FacilitatorFeedbackRow | undefined;
+    if (!row) return res.status(409).json({ error: 'Training survey has already been submitted for this learning path' });
+
+    return res.status(201).json({ survey: mapFacilitatorFeedback(row) });
+  });
+
   app.get('/api/admin/dashboard', authenticate, requireAdmin, async (_req, res) => {
     const kpis = await readAdminKpis(db);
     const cohortResult = await db.query(
@@ -376,6 +484,26 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       readinessByTrack: await readReadinessByTrack(db),
       cohorts: cohortRows.map((row) => ({ ...row, participants: Number(row.participants) })),
     });
+  });
+
+  app.get('/api/admin/audit-events', authenticate, requireAdmin, async (_req, res) => {
+    const result = await db.query(
+      `SELECT
+         e.id,
+         e.actor_user_id,
+         u.email AS actor_email,
+         u.name AS actor_name,
+         e.action,
+         e.entity_type,
+         e.entity_id,
+         e.metadata,
+         e.created_at
+       FROM admin_audit_events e
+       LEFT JOIN users u ON u.id = e.actor_user_id
+       ORDER BY e.created_at DESC
+       LIMIT 50`,
+    );
+    res.json({ events: (result.rows as AdminAuditEventRow[]).map(mapAdminAuditEvent) });
   });
 
   app.get('/api/admin/exports/clearance.csv', authenticate, requireAdmin, async (_req, res) => {
@@ -474,7 +602,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     res.json({ learners: (result.rows as AdminLearnerRow[]).map(mapAdminLearner) });
   });
 
-  app.post('/api/admin/learners', authenticate, requireAdmin, async (req, res) => {
+  app.post('/api/admin/learners', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = adminCreateLearnerSchema.parse(req.body);
     const cohort = await readAdminCohort(db, payload.cohortId);
     if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
@@ -503,6 +631,12 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
          ON CONFLICT (cohort_id, learner_id) DO NOTHING`,
         [randomUUID(), payload.cohortId, id, 'learner', new Date().toISOString()],
       );
+    });
+
+    await recordAuditEvent(db, req.user, 'learner.created', 'learner', id, {
+      email: payload.email.toLowerCase(),
+      cohortId: payload.cohortId,
+      assignedPathIds: payload.assignedPathIds,
     });
 
     res.status(201).json({
@@ -540,6 +674,12 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       );
     });
 
+    await recordAuditEvent(db, req.user, 'learner_invite.created', 'learner', learner.id, {
+      email: learner.email,
+      expiresAt,
+      inviteStatus: 'pending',
+    });
+
     const origin = req.get('origin') ?? `${req.protocol}://${req.get('host')}`;
     res.status(201).json({
       invite: {
@@ -564,6 +704,11 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       [new Date().toISOString(), learner.id],
     );
 
+    await recordAuditEvent(db, req.user, 'learner_invite.revoked', 'learner', learner.id, {
+      email: learner.email,
+      inviteStatus: 'revoked',
+    });
+
     res.json({ learner: { ...learner, inviteStatus: 'revoked' } });
   });
 
@@ -572,7 +717,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     res.json({ cohorts: (result.rows as AdminCohortRow[]).map(mapAdminCohort) });
   });
 
-  app.post('/api/admin/cohorts', authenticate, requireAdmin, async (req, res) => {
+  app.post('/api/admin/cohorts', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = adminCreateCohortSchema.parse(req.body);
     const id = randomUUID();
     await db.query(
@@ -587,6 +732,13 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
         JSON.stringify(payload.pathIds),
       ],
     );
+
+    await recordAuditEvent(db, req.user, 'cohort.created', 'cohort', id, {
+      name: payload.name,
+      region: payload.region,
+      pathIds: payload.pathIds,
+      facilitatorIds: payload.facilitatorIds,
+    });
 
     res.status(201).json({
       cohort: {
@@ -605,7 +757,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     res.json({ providers: getAiProviderStatuses() });
   });
 
-  app.post('/api/ai/deck-outline', authenticate, requireAdmin, async (req, res) => {
+  app.post('/api/ai/deck-outline', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = aiDeckOutlineSchema.parse(req.body);
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
@@ -620,7 +772,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     }
   });
 
-  app.post('/api/ai/deck-outline-jobs', authenticate, requireAdmin, async (req, res) => {
+  app.post('/api/ai/deck-outline-jobs', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = aiDeckOutlineSchema.parse(req.body);
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
@@ -637,6 +789,12 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       provider: selected.id,
     };
     deckJobs.set(job.id, job);
+    await recordAuditEvent(db, req.user, 'ai_deck_outline_job.created', 'deck_job', job.id, {
+      provider: selected.id,
+      topic: payload.topic,
+      slideCount: payload.slideCount,
+      durationMinutes: payload.durationMinutes,
+    });
 
     void (async () => {
       updateDeckJob(job.id, { status: 'running' });
@@ -669,7 +827,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     res.json({ job: publicDeckJob(job), outline: job.outline, provider });
   });
 
-  app.post('/api/ai/deck-pptx', authenticate, requireAdmin, async (req, res) => {
+  app.post('/api/ai/deck-pptx', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = aiDeckOutlineSchema.parse(req.body);
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
@@ -690,7 +848,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     }
   });
 
-  app.post('/api/ai/deck-jobs', authenticate, requireAdmin, async (req, res) => {
+  app.post('/api/ai/deck-jobs', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = aiDeckOutlineSchema.parse(req.body);
     const providers = getAiProviderStatuses();
     const selected = providers.find((provider) => provider.id === payload.provider);
@@ -707,6 +865,12 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       provider: selected.id,
     };
     deckJobs.set(job.id, job);
+    await recordAuditEvent(db, req.user, 'ai_deck_pptx_job.created', 'deck_job', job.id, {
+      provider: selected.id,
+      topic: payload.topic,
+      slideCount: payload.slideCount,
+      durationMinutes: payload.durationMinutes,
+    });
 
     void (async () => {
       updateDeckJob(job.id, { status: 'running' });
@@ -805,6 +969,44 @@ function sweepDeckJobs() {
   for (const [id, job] of deckJobs) {
     if (job.expiresAt <= now) deckJobs.delete(id);
   }
+}
+
+async function recordAuditEvent(
+  db: AppDatabase,
+  actor: User | undefined,
+  action: string,
+  entityType: string,
+  entityId: string,
+  metadata: Record<string, unknown> = {},
+) {
+  await db.query(
+    `INSERT INTO admin_audit_events
+     (id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      randomUUID(),
+      actor?.id ?? null,
+      action,
+      entityType,
+      entityId,
+      JSON.stringify(metadata),
+      new Date().toISOString(),
+    ],
+  );
+}
+
+function mapAdminAuditEvent(row: AdminAuditEventRow) {
+  return {
+    id: row.id,
+    actorUserId: row.actor_user_id,
+    actorEmail: row.actor_email,
+    actorName: row.actor_name,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    metadata: row.metadata ?? {},
+    createdAt: row.created_at.toISOString(),
+  };
 }
 
 async function authenticate(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -912,11 +1114,14 @@ async function readAdminKpis(db: AppDatabase) {
         COALESCE(ROUND(AVG(CASE WHEN correct THEN 100 ELSE 0 END))::int, 0) AS average_knowledge_score
       FROM knowledge_attempts
     ),
+    learner_assignments AS (
+      SELECT COALESCE(SUM(jsonb_array_length(assigned_path_ids)), 0)::int AS assigned_surveys
+      FROM learners
+    ),
     feedback AS (
       SELECT
-        COALESCE(ROUND(AVG(score)::numeric, 1), 0)::float AS facilitator_rating,
-        COALESCE(ROUND((COUNT(*) FILTER (WHERE survey_submitted)::numeric / NULLIF(COUNT(*), 0)) * 100)::int, 0)
-          AS survey_completion
+        COALESCE(ROUND(AVG(score) FILTER (WHERE survey_submitted), 1), 0)::float AS facilitator_rating,
+        COUNT(DISTINCT (learner_id, path_id)) FILTER (WHERE survey_submitted)::int AS submitted_surveys
       FROM facilitator_feedback
     ),
     completed AS (
@@ -929,10 +1134,11 @@ async function readAdminKpis(db: AppDatabase) {
       SELECT COUNT(*)::int AS modules FROM modules
     )
     SELECT *
-    FROM learner_count, attendance, clearance, attempts, feedback, completed, practice, module_count
+    FROM learner_count, attendance, clearance, attempts, learner_assignments, feedback, completed, practice, module_count
   `);
   const row = result.rows[0] as AdminKpiRow;
   const completionRate = row.modules > 0 ? Math.round((row.completed_modules / row.modules) * 100) : 0;
+  const surveyCompletion = row.assigned_surveys > 0 ? Math.round((row.submitted_surveys / row.assigned_surveys) * 100) : 0;
   return {
     totalLearners: row.total_learners,
     attended: row.attended ?? 0,
@@ -941,7 +1147,7 @@ async function readAdminKpis(db: AppDatabase) {
     blocked: row.blocked ?? 0,
     makeupRequired: row.makeup_required ?? 0,
     averageKnowledgeScore: row.average_knowledge_score,
-    surveyCompletion: row.survey_completion,
+    surveyCompletion,
     facilitatorRating: row.facilitator_rating,
     practiceSubmissions: row.practice_submissions,
     completionRate,
@@ -1071,6 +1277,26 @@ function mapPracticeSubmission(row: PracticeRow) {
     sourceBasis: row.source_basis,
     submittedAt: row.created_at,
     contentVersion: row.content_version,
+  };
+}
+
+function surveyRatingFromScore(score: number): FacilitatorFeedbackRow['rating'] {
+  if (score >= 4) return 'ready';
+  if (score >= 3) return 'needs-coaching';
+  return 'not-ready';
+}
+
+function mapFacilitatorFeedback(row: FacilitatorFeedbackRow) {
+  return {
+    id: row.id,
+    learnerId: row.learner_id,
+    facilitatorId: row.facilitator_id,
+    pathId: row.path_id,
+    rating: row.rating,
+    score: Number(row.score),
+    notes: row.notes,
+    surveySubmitted: row.survey_submitted,
+    submittedAt: row.created_at,
   };
 }
 
@@ -1297,6 +1523,24 @@ type LearnerRow = {
   region: string;
 };
 
+type LearnerSurveyAccessRow = {
+  id: string;
+  assigned_path_ids: string[];
+  facilitator_ids: string[];
+};
+
+type FacilitatorFeedbackRow = {
+  id: string;
+  learner_id: string;
+  facilitator_id: string;
+  path_id: string;
+  rating: 'ready' | 'needs-coaching' | 'not-ready';
+  score: string | number;
+  notes: string;
+  survey_submitted: boolean;
+  created_at: Date;
+};
+
 type InviteAcceptanceRow = {
   id: string;
   learner_id: string;
@@ -1310,6 +1554,18 @@ type InviteAcceptanceRow = {
   assigned_path_ids: string[];
   cohort_name: string;
   region: string;
+};
+
+type AdminAuditEventRow = {
+  id: string;
+  actor_user_id: string | null;
+  actor_email: string | null;
+  actor_name: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  metadata: Record<string, unknown>;
+  created_at: Date;
 };
 
 type AdminCohortRow = {
@@ -1330,7 +1586,8 @@ type AdminKpiRow = {
   blocked: number | null;
   average_knowledge_score: number;
   facilitator_rating: number;
-  survey_completion: number;
+  assigned_surveys: number;
+  submitted_surveys: number;
   completed_modules: number;
   practice_submissions: number;
   modules: number;

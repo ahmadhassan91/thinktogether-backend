@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import {
   computeTrainingKpis,
   filterParticipants,
@@ -8,6 +8,7 @@ import {
 import type {
   AdminCohort,
   AdminCohortInput,
+  AdminAuditEvent,
   AdminDashboardPayload,
   AdminExportKind,
   AdminLearner,
@@ -20,6 +21,7 @@ export type AdminDashboardProps = {
   dashboard?: AdminDashboardPayload
   learners?: AdminLearner[]
   managementCohorts?: AdminCohort[]
+  auditEvents?: AdminAuditEvent[]
   onCreateLearner?: (learner: AdminLearnerInput) => Promise<void> | void
   onCreateCohort?: (cohort: AdminCohortInput) => Promise<void> | void
   onCreateLearnerInvite?: (learnerId: string) => Promise<LearnerInvite> | LearnerInvite
@@ -36,6 +38,7 @@ const statusLabels: Record<ParticipantStatus, string> = {
 }
 
 const uniqueValues = (values: string[]) => [...new Set(values)].sort((left, right) => left.localeCompare(right))
+const inviteExceptionStatuses = ['pending', 'revoked', 'expired'] as const
 
 const chipStyle = {
   border: '1px solid #ccd5df',
@@ -45,7 +48,7 @@ const chipStyle = {
   fontWeight: 700,
   lineHeight: 1,
   padding: '0.35rem 0.55rem',
-} satisfies React.CSSProperties
+} satisfies CSSProperties
 
 const emptyLearnerForm: AdminLearnerInput = {
   firstName: '',
@@ -68,6 +71,7 @@ export function AdminDashboard({
   dashboard,
   learners = [],
   managementCohorts = [],
+  auditEvents = [],
   onCreateLearner,
   onCreateCohort,
   onCreateLearnerInvite,
@@ -82,6 +86,11 @@ export function AdminDashboard({
   const [inviteResult, setInviteResult] = useState<LearnerInvite | null>(null)
   const [inviteError, setInviteError] = useState('')
   const [exportError, setExportError] = useState('')
+  const [learnerSearch, setLearnerSearch] = useState('')
+  const [learnerInviteFilter, setLearnerInviteFilter] = useState<AdminLearner['inviteStatus'] | 'all' | 'exceptions'>(
+    'all',
+  )
+  const [learnerRiskFilter, setLearnerRiskFilter] = useState<'all' | 'unassigned_cohort' | 'unassigned_path'>('all')
 
   const filteredParticipants = useMemo(
     () => filterParticipants(participants, { region, status, cohort }),
@@ -90,6 +99,51 @@ export function AdminDashboard({
   const kpis = useMemo(() => computeTrainingKpis(participants), [participants])
   const regions = useMemo(() => uniqueValues(participants.map((participant) => participant.region)), [participants])
   const cohorts = useMemo(() => uniqueValues(participants.map((participant) => participant.cohort)), [participants])
+  const learnerRegions = useMemo(() => uniqueValues(learners.map((learner) => learner.region).filter(Boolean)), [learners])
+  const inviteExceptions = useMemo(
+    () => learners.filter((learner) => isInviteException(learner.inviteStatus)),
+    [learners],
+  )
+  const unassignedCohortLearners = useMemo(
+    () => learners.filter((learner) => !learner.cohortId || !learner.cohortName),
+    [learners],
+  )
+  const unassignedPathLearners = useMemo(
+    () => learners.filter((learner) => !learner.assignedPathIds.length),
+    [learners],
+  )
+  const trackExceptions = useMemo(
+    () => dashboard?.readinessByTrack.filter((track) => track.blocked > 0 || track.needsCoaching > 0) ?? [],
+    [dashboard],
+  )
+  const filteredLearners = useMemo(() => {
+    const normalizedSearch = learnerSearch.trim().toLowerCase()
+
+    return learners.filter((learner) => {
+      const searchable = [
+        learner.firstName,
+        learner.lastName,
+        learner.email,
+        learner.cohortName,
+        learner.region,
+        ...learner.assignedPathIds,
+      ]
+        .join(' ')
+        .toLowerCase()
+      const matchesSearch = !normalizedSearch || searchable.includes(normalizedSearch)
+      const matchesInvite =
+        learnerInviteFilter === 'all' ||
+        (learnerInviteFilter === 'exceptions'
+          ? isInviteException(learner.inviteStatus)
+          : learner.inviteStatus === learnerInviteFilter)
+      const matchesRisk =
+        learnerRiskFilter === 'all' ||
+        (learnerRiskFilter === 'unassigned_cohort' && (!learner.cohortId || !learner.cohortName)) ||
+        (learnerRiskFilter === 'unassigned_path' && !learner.assignedPathIds.length)
+
+      return matchesSearch && matchesInvite && matchesRisk
+    })
+  }, [learnerInviteFilter, learnerRiskFilter, learnerSearch, learners])
 
   const handleLearnerSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -213,17 +267,190 @@ export function AdminDashboard({
         ))}
       </div>
 
+      <section
+        aria-labelledby="operational-readiness-heading"
+        style={{
+          border: '1px solid #d8dee7',
+          borderRadius: 8,
+          marginBottom: '1.25rem',
+          padding: '1rem',
+        }}
+      >
+        <div
+          style={{
+            alignItems: 'center',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            justifyContent: 'space-between',
+            marginBottom: '0.75rem',
+          }}
+        >
+          <div>
+            <p style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, margin: 0, textTransform: 'uppercase' }}>
+              Command center
+            </p>
+            <h2 id="operational-readiness-heading" style={{ fontSize: '1.2rem', margin: '0.15rem 0 0' }}>
+              Operational readiness
+            </h2>
+          </div>
+          <span
+            style={{
+              ...chipStyle,
+              background:
+                inviteExceptions.length || unassignedCohortLearners.length || unassignedPathLearners.length || trackExceptions.length
+                  ? '#fff7ed'
+                  : '#ecfdf3',
+            }}
+          >
+            {inviteExceptions.length || unassignedCohortLearners.length || unassignedPathLearners.length || trackExceptions.length
+              ? 'Exceptions need review'
+              : 'No readiness exceptions'}
+          </span>
+        </div>
+
+        <div
+          aria-label="Operational exception summary"
+          style={{
+            display: 'grid',
+            gap: '0.75rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+          }}
+        >
+          <ReadinessCard
+            label="Invite exceptions"
+            tone={inviteExceptions.length ? 'warning' : 'ok'}
+            value={inviteExceptions.length}
+          >
+            Pending {countLearnersByInviteStatus(learners, 'pending')} / Revoked{' '}
+            {countLearnersByInviteStatus(learners, 'revoked')} / Expired {countLearnersByInviteStatus(learners, 'expired')}
+          </ReadinessCard>
+          <ReadinessCard
+            label="Unassigned cohort"
+            tone={unassignedCohortLearners.length ? 'warning' : 'ok'}
+            value={unassignedCohortLearners.length}
+          >
+            Learners without a cohort assignment
+          </ReadinessCard>
+          <ReadinessCard
+            label="Unassigned path"
+            tone={unassignedPathLearners.length ? 'warning' : 'ok'}
+            value={unassignedPathLearners.length}
+          >
+            Learners without a training path
+          </ReadinessCard>
+          <ReadinessCard
+            label="Track blockers"
+            tone={trackExceptions.length ? 'warning' : 'ok'}
+            value={trackExceptions.reduce((total, track) => total + track.blocked + track.needsCoaching, 0)}
+          >
+            Blocked and coaching-needed track counts
+          </ReadinessCard>
+        </div>
+
+        {dashboard ? (
+          <div style={{ marginTop: '1rem' }}>
+            <h3 style={{ fontSize: '1rem', margin: '0 0 0.5rem' }}>Readiness by track</h3>
+            {dashboard.readinessByTrack.length ? (
+              <div className="admin-table-wrap">
+                <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      {['Track', 'Enrolled', 'Clearance-ready', 'Needs coaching', 'Blocked'].map((heading) => (
+                        <th key={heading} style={{ borderBottom: '1px solid #cbd5e1', padding: '0.6rem' }}>
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboard.readinessByTrack.map((track) => (
+                      <tr key={track.track}>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{track.track}</td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{track.enrolled}</td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{track.clearanceReady}</td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                          <span style={{ ...chipStyle, background: track.needsCoaching ? '#fff7ed' : '#ecfdf3' }}>
+                            {track.needsCoaching}
+                          </span>
+                        </td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                          <span style={{ ...chipStyle, background: track.blocked ? '#fee2e2' : '#ecfdf3' }}>
+                            {track.blocked}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ color: '#657184', margin: 0 }}>No track readiness records are available yet.</p>
+            )}
+          </div>
+        ) : (
+          <p style={{ color: '#657184', margin: '0.75rem 0 0' }}>
+            Dashboard readiness data is not loaded yet. Learner roster exceptions will appear when learners are available.
+          </p>
+        )}
+      </section>
+
       {onDownloadExport ? (
         <section aria-label="Admin exports" style={{ marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button onClick={() => void handleDownloadExport('clearance')} type="button">
-              Download clearance CSV
+              Download clearance-ready CSV
             </button>
             <button onClick={() => void handleDownloadExport('completions')} type="button">
-              Download completion CSV
+              Download completions CSV
             </button>
           </div>
           {exportError ? <p role="alert">{exportError}</p> : null}
+        </section>
+      ) : null}
+
+      {auditEvents.length ? (
+        <section
+          aria-labelledby="admin-audit-heading"
+          style={{ border: '1px solid #d8dee7', borderRadius: 8, marginBottom: '1.25rem', padding: '1rem' }}
+        >
+          <div style={{ marginBottom: '0.75rem' }}>
+            <p style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, margin: 0, textTransform: 'uppercase' }}>
+              Production controls
+            </p>
+            <h2 id="admin-audit-heading" style={{ fontSize: '1.2rem', margin: '0.15rem 0 0' }}>
+              Admin audit trail
+            </h2>
+          </div>
+          <div className="admin-table-wrap">
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <thead>
+                <tr>
+                  {['Time', 'Action', 'Actor', 'Target'].map((heading) => (
+                    <th key={heading} style={{ borderBottom: '1px solid #cbd5e1', padding: '0.6rem' }}>
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {auditEvents.slice(0, 8).map((event) => (
+                  <tr key={event.id}>
+                    <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                      {new Date(event.createdAt).toLocaleString()}
+                    </td>
+                    <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{humanizeAuditAction(event.action)}</td>
+                    <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                      {event.actorName ?? event.actorEmail ?? 'System'}
+                    </td>
+                    <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                      <span style={{ ...chipStyle, background: '#eef4ff', color: '#27446d' }}>{event.entityType}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
 
@@ -252,6 +479,7 @@ export function AdminDashboard({
             </tbody>
           </table>
           </div>
+          {!dashboard.cohorts.length ? <p style={{ color: '#657184', margin: '0.75rem 0 0' }}>No cohorts are available yet.</p> : null}
         </section>
       ) : null}
 
@@ -388,6 +616,63 @@ export function AdminDashboard({
           {learners.length ? (
             <div style={{ marginTop: '1rem' }}>
               <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Managed learners</h3>
+              <div
+                aria-label="Managed learner filters"
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginBottom: '0.75rem' }}
+              >
+                <label>
+                  Search learners
+                  <input
+                    aria-label="Search managed learners"
+                    onChange={(event) => setLearnerSearch(event.target.value)}
+                    placeholder="Name, email, cohort, path"
+                    style={{ display: 'block', marginTop: '0.25rem', minWidth: 220 }}
+                    type="search"
+                    value={learnerSearch}
+                  />
+                </label>
+                <label>
+                  Invite status
+                  <select
+                    aria-label="Filter managed learners by invite status"
+                    onChange={(event) =>
+                      setLearnerInviteFilter(
+                        event.target.value as AdminLearner['inviteStatus'] | 'all' | 'exceptions',
+                      )
+                    }
+                    style={{ display: 'block', marginTop: '0.25rem' }}
+                    value={learnerInviteFilter}
+                  >
+                    <option value="all">All invite statuses</option>
+                    <option value="exceptions">Pending, revoked, expired</option>
+                    <option value="not_invited">Not invited</option>
+                    <option value="pending">Pending</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="expired">Expired</option>
+                    <option value="revoked">Revoked</option>
+                  </select>
+                </label>
+                <label>
+                  Assignment risk
+                  <select
+                    aria-label="Filter managed learners by assignment risk"
+                    onChange={(event) =>
+                      setLearnerRiskFilter(event.target.value as 'all' | 'unassigned_cohort' | 'unassigned_path')
+                    }
+                    style={{ display: 'block', marginTop: '0.25rem' }}
+                    value={learnerRiskFilter}
+                  >
+                    <option value="all">All assignment states</option>
+                    <option value="unassigned_cohort">Missing cohort</option>
+                    <option value="unassigned_path">Missing path</option>
+                  </select>
+                </label>
+                {learnerRegions.length ? (
+                  <div aria-label="Managed learner regions" style={{ alignSelf: 'end', color: '#657184', fontSize: '0.85rem' }}>
+                    {learnerRegions.length} region{learnerRegions.length === 1 ? '' : 's'}
+                  </div>
+                ) : null}
+              </div>
               <div className="admin-table-wrap">
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
@@ -400,9 +685,9 @@ export function AdminDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {learners.map((learner) => {
+                  {filteredLearners.map((learner) => {
                     const canRevokeInvite = learner.inviteStatus === 'pending'
-                    const inviteActionLabel = learner.inviteStatus === 'pending' ? 'Resend invite' : 'Generate invite'
+                    const inviteActionLabel = learner.inviteStatus === 'pending' ? 'Copy fresh invite link' : 'Generate invite'
 
                     return (
                       <tr key={learner.id}>
@@ -410,8 +695,10 @@ export function AdminDashboard({
                           {learner.firstName} {learner.lastName}
                         </td>
                         <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{learner.email}</td>
-                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{learner.cohortName}</td>
-                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{learner.region}</td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                          {learner.cohortName || <span style={{ color: '#9a3412', fontWeight: 700 }}>Missing cohort</span>}
+                        </td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{learner.region || 'Unassigned'}</td>
                         <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
                           <span style={{ ...chipStyle, background: learner.inviteStatus === 'accepted' ? '#ecfdf3' : '#fff7ed' }}>
                             {formatInviteStatus(learner.inviteStatus)}
@@ -437,6 +724,11 @@ export function AdminDashboard({
                 </tbody>
               </table>
               </div>
+              {!filteredLearners.length ? (
+                <p style={{ color: '#657184', margin: '0.75rem 0 0' }}>
+                  No learners match the current search and filters.
+                </p>
+              ) : null}
               {inviteResult ? (
                 <div aria-live="polite" style={{ marginTop: '0.75rem' }}>
                   <strong>Invite ready</strong>
@@ -448,7 +740,11 @@ export function AdminDashboard({
               ) : null}
               {inviteError ? <p role="alert">{inviteError}</p> : null}
             </div>
-          ) : null}
+          ) : (
+            <p style={{ color: '#657184', margin: '1rem 0 0' }}>
+              No managed learners are available yet. Add a learner to start issuing invites.
+            </p>
+          )}
         </section>
       ) : null}
 
@@ -538,12 +834,70 @@ export function AdminDashboard({
           ))}
         </tbody>
       </table></div> : null}
+      {participants.length && !filteredParticipants.length ? (
+        <p style={{ color: '#657184', margin: '0.75rem 0 0' }}>No participant records match the current filters.</p>
+      ) : null}
+      {!participants.length && !dashboard && !learners.length ? (
+        <section
+          aria-label="Admin dashboard empty state"
+          style={{ border: '1px solid #d8dee7', borderRadius: 8, marginTop: '1.25rem', padding: '1rem' }}
+        >
+          <h2 style={{ fontSize: '1.2rem', margin: '0 0 0.4rem' }}>No admin data loaded</h2>
+          <p style={{ color: '#657184', margin: 0 }}>
+            Training operations data will appear here after dashboard, learner, or participant records are available.
+          </p>
+        </section>
+      ) : null}
     </section>
+  )
+}
+
+function ReadinessCard({
+  children,
+  label,
+  tone,
+  value,
+}: {
+  children: React.ReactNode
+  label: string
+  tone: 'ok' | 'warning'
+  value: number
+}) {
+  return (
+    <div
+      aria-label={`${label}: ${value}`}
+      style={{
+        background: tone === 'warning' ? '#fff7ed' : '#f8fafc',
+        border: `1px solid ${tone === 'warning' ? '#fed7aa' : '#d8dee7'}`,
+        borderRadius: 8,
+        padding: '0.8rem',
+      }}
+    >
+      <div style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: '1.45rem', fontWeight: 800, marginTop: '0.2rem' }}>{value}</div>
+      <p style={{ color: '#5b6675', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>{children}</p>
+    </div>
   )
 }
 
 function splitCsvInput(value: string) {
   return value.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+function isInviteException(status: AdminLearner['inviteStatus']) {
+  return inviteExceptionStatuses.includes(status as (typeof inviteExceptionStatuses)[number])
+}
+
+function humanizeAuditAction(action: string) {
+  return action
+    .split('.')
+    .map((part) => part.replace(/_/g, ' '))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function countLearnersByInviteStatus(learners: AdminLearner[], status: AdminLearner['inviteStatus']) {
+  return learners.filter((learner) => learner.inviteStatus === status).length
 }
 
 function formatInviteStatus(status: AdminLearner['inviteStatus'] | LearnerInvite['inviteStatus'] | undefined) {

@@ -34,6 +34,9 @@ describe('Think Together training API', () => {
     await request(handle.app).post('/api/admin/learners').send({}).expect(401);
     await request(handle.app).get('/api/admin/cohorts').expect(401);
     await request(handle.app).post('/api/admin/cohorts').send({}).expect(401);
+    await request(handle.app).get('/api/admin/audit-events').expect(401);
+    await request(handle.app).get('/api/admin/source-intelligence/summary').expect(401);
+    await request(handle.app).post('/api/surveys/training').send({}).expect(401);
 
     const login = await request(handle.app)
       .post('/api/auth/login')
@@ -50,6 +53,20 @@ describe('Think Together training API', () => {
 
     expect(dashboard.body.kpis.totalLearners).toBeGreaterThan(0);
     expect(dashboard.body.readinessByTrack).toEqual(expect.any(Array));
+
+    const sourceSummary = await request(handle.app)
+      .get('/api/admin/source-intelligence/summary')
+      .set('Authorization', `Bearer ${login.body.token}`)
+      .expect(200);
+    expect(sourceSummary.body.totals.artifacts).toBeGreaterThanOrEqual(6);
+    expect(sourceSummary.body.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          artifact: expect.objectContaining({ artifact: 'PBIS PPT Master.pptx' }),
+          totalReferences: expect.any(Number),
+        }),
+      ]),
+    );
   });
 
   it('lists and creates admin-managed learner records', async () => {
@@ -111,6 +128,21 @@ describe('Think Together training API', () => {
       'jordan.lee@example.org',
     );
 
+    const auditEvents = await request(handle.app)
+      .get('/api/admin/audit-events')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(auditEvents.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'learner.created',
+          entityType: 'learner',
+          entityId: created.body.learner.id,
+          metadata: expect.objectContaining({ email: 'jordan.lee@example.org' }),
+        }),
+      ]),
+    );
+
     await request(handle.app)
       .post('/api/admin/learners')
       .set('Authorization', `Bearer ${token}`)
@@ -122,6 +154,33 @@ describe('Think Together training API', () => {
         assignedPathIds: ['program-induction-pbis'],
       })
       .expect(409);
+  });
+
+  it('surfaces source intelligence search and QA flags for shared artifacts', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+
+    const search = await request(handle.app)
+      .get('/api/admin/source-intelligence/search')
+      .query({ query: '10:2 practice PBIS' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(search.body.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          artifact: expect.objectContaining({ artifact: expect.any(String) }),
+          excerpt: expect.any(String),
+          relevanceScore: expect.any(Number),
+        }),
+      ]),
+    );
+
+    const qaFlags = await request(handle.app)
+      .get('/api/admin/source-intelligence/qa-flags')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(qaFlags.body.modulesWithNoSourceRefs).toEqual([]);
+    expect(qaFlags.body.sourceRefsWithoutLibraryArtifact).toEqual([]);
   });
 
   it('creates and accepts learner invites without storing plaintext tokens', async () => {
@@ -284,6 +343,102 @@ describe('Think Together training API', () => {
       .post('/api/admin/learners/learner-1/invite')
       .set('Authorization', `Bearer ${accepted.body.token}`)
       .expect(403);
+    await request(handle.app)
+      .post('/api/surveys/training')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ pathId: 'program-induction-pbis', score: 4, notes: 'Clear facilitation.' })
+      .expect(403);
+  });
+
+  it('accepts one learner training survey and includes it in admin reporting metrics', async () => {
+    handle = await boot();
+    const adminToken = await loginToken(handle);
+
+    const created = await request(handle.app)
+      .post('/api/admin/learners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'Sam',
+        lastName: 'Patel',
+        email: 'sam.patel@example.org',
+        cohortId: 'cohort-pbis-mvp-1',
+        assignedPathIds: ['program-induction-pbis'],
+      })
+      .expect(201);
+
+    const beforeSurvey = await request(handle.app)
+      .get('/api/admin/dashboard')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(beforeSurvey.body.kpis.surveyCompletion).toBe(50);
+    expect(beforeSurvey.body.kpis.facilitatorRating).toBe(4.8);
+
+    const invite = await request(handle.app)
+      .post(`/api/admin/learners/${created.body.learner.id}/invite`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    const accepted = await request(handle.app)
+      .post('/api/auth/accept-invite')
+      .send({ token: invite.body.invite.inviteToken, password: 'LearnerPass!2026' })
+      .expect(201);
+
+    const survey = await request(handle.app)
+      .post('/api/surveys/training')
+      .set('Authorization', `Bearer ${accepted.body.token}`)
+      .send({
+        pathId: 'program-induction-pbis',
+        facilitatorId: 'facilitator-1',
+        score: 3.5,
+        notes: 'The facilitator connected PBIS practice to real site routines.',
+      })
+      .expect(201);
+
+    expect(survey.body.survey).toEqual(
+      expect.objectContaining({
+        learnerId: created.body.learner.id,
+        facilitatorId: 'facilitator-1',
+        pathId: 'program-induction-pbis',
+        rating: 'needs-coaching',
+        score: 3.5,
+        notes: 'The facilitator connected PBIS practice to real site routines.',
+        surveySubmitted: true,
+      }),
+    );
+
+    const rows = await handle.db.query(
+      `SELECT learner_id, facilitator_id, path_id, rating, score::float, notes, survey_submitted
+       FROM facilitator_feedback
+       WHERE learner_id = $1 AND path_id = $2`,
+      [created.body.learner.id, 'program-induction-pbis'],
+    );
+    expect(rows.rows).toEqual([
+      expect.objectContaining({
+        learner_id: created.body.learner.id,
+        facilitator_id: 'facilitator-1',
+        path_id: 'program-induction-pbis',
+        rating: 'needs-coaching',
+        score: 3.5,
+        survey_submitted: true,
+      }),
+    ]);
+
+    await request(handle.app)
+      .post('/api/surveys/training')
+      .set('Authorization', `Bearer ${accepted.body.token}`)
+      .send({ pathId: 'program-induction-pbis', facilitatorId: 'facilitator-1', score: 5, notes: 'Duplicate.' })
+      .expect(409);
+
+    const afterSurvey = await request(handle.app)
+      .get('/api/admin/dashboard')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(afterSurvey.body.kpis).toEqual(
+      expect.objectContaining({
+        totalLearners: 2,
+        surveyCompletion: 100,
+        facilitatorRating: 4.2,
+      }),
+    );
   });
 
   it('binds progress records to the accepted learner user', async () => {
@@ -446,13 +601,17 @@ describe('Think Together training API', () => {
         facilitatorRating: 4.8,
       }),
     );
-    expect(dashboard.body.readinessByTrack).toEqual([
+    expect(dashboard.body.readinessByTrack).toEqual(expect.arrayContaining([
       expect.objectContaining({
         track: 'Program Induction - PBIS',
         enrolled: 1,
         clearanceReady: 1,
       }),
-    ]);
+      expect.objectContaining({
+        track: 'Site Lead Onboarding v0',
+        enrolled: 0,
+      }),
+    ]));
   });
 
   it('tracks applied database migrations and exports clearance handoff fields', async () => {
@@ -465,6 +624,8 @@ describe('Think Together training API', () => {
       { id: '002_identity_columns', name: 'Learner identity and content attempt columns' },
       { id: '003_completion_records', name: 'Durable learner completion records' },
       { id: '004_invite_revocations', name: 'Invite revocation support' },
+      { id: '005_facilitator_feedback_survey_guard', name: 'Learner survey duplicate guard' },
+      { id: '006_admin_audit_events', name: 'Admin audit event trail' },
     ]);
 
     const clearanceExport = await request(handle.app)
@@ -552,6 +713,46 @@ describe('Think Together training API', () => {
     expect(res.body.modules.length).toBeGreaterThanOrEqual(3);
     expect(res.body.knowledgeChecks.length).toBeGreaterThan(0);
     expect(res.body.scenarios.length).toBeGreaterThan(0);
+  });
+
+  it('answers knowledge assistant questions with source-backed evidence', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+
+    const response = await request(handle.app)
+      .post('/api/knowledge-assistant/answer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ question: 'What is the main purpose of PBIS in Program Induction?' })
+      .expect(200);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        answer: expect.stringContaining('Teach and reinforce expected behavior proactively'),
+        confidence: 'Source-backed',
+        status: 'answered',
+      }),
+    );
+    expect(response.body.sourceBasis).toEqual(expect.arrayContaining([expect.stringContaining('PBIS PPT Master.pptx')]));
+  });
+
+  it('returns not found when knowledge assistant evidence is weak', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+
+    const response = await request(handle.app)
+      .post('/api/knowledge-assistant/answer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ question: 'What does the district-specific suspension policy require?' })
+      .expect(200);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        answer: 'Not found in the provided Think Together materials.',
+        confidence: 'Not found in provided sources',
+        sourceBasis: [],
+        status: 'not_found',
+      }),
+    );
   });
 
   it('generates a source-grounded AI deck outline for admins', async () => {

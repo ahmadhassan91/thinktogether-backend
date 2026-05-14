@@ -42,7 +42,7 @@ export type ProviderStatus = {
   note: string;
 };
 
-type AnyJson = Record<string, any>;
+type JsonRecord = Record<string, unknown>;
 
 export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
   return [
@@ -163,9 +163,13 @@ async function generateWithGemini(prompt: string, request: DeckOutlineRequest): 
     {},
     45_000,
   );
-  const responsePayload = result as AnyJson;
-  const text = responsePayload.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
-  return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.modelVersion ?? 'gemini-flash-latest');
+  const responsePayload = asJsonRecord(result);
+  const firstCandidate = asJsonRecord(asJsonArray(responsePayload.candidates)[0]);
+  const content = asJsonRecord(firstCandidate.content);
+  const text = asJsonArray(content.parts)
+    .map((part) => getString(asJsonRecord(part).text))
+    .join('');
+  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.modelVersion, 'gemini-flash-latest'));
 }
 
 async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
@@ -190,11 +194,13 @@ async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): 
     },
     75_000,
   );
-  const responsePayload = result as AnyJson;
-  const text = responsePayload.output_text
-    ?? responsePayload.output?.flatMap((item: AnyJson) => item.content ?? []).map((part: AnyJson) => part.text ?? '').join('')
-    ?? '';
-  return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.model ?? 'gpt-5.2');
+  const responsePayload = asJsonRecord(result);
+  const text = getString(responsePayload.output_text)
+    || asJsonArray(responsePayload.output)
+      .flatMap((item) => asJsonArray(asJsonRecord(item).content))
+      .map((part) => getString(asJsonRecord(part).text))
+      .join('');
+  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'gpt-5.2'));
 }
 
 async function generateWithClaude(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
@@ -216,9 +222,11 @@ async function generateWithClaude(prompt: string, request: DeckOutlineRequest): 
     },
     60_000,
   );
-  const responsePayload = result as AnyJson;
-  const text = responsePayload.content?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
-  return normalizeDeckOutline(parseJsonObject(text), request, responsePayload.model ?? 'claude-sonnet');
+  const responsePayload = asJsonRecord(result);
+  const text = asJsonArray(responsePayload.content)
+    .map((part) => getString(asJsonRecord(part).text))
+    .join('');
+  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'claude-sonnet'));
 }
 
 async function postJson(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<unknown> {
@@ -233,8 +241,11 @@ async function postJson(url: string, body: unknown, headers: Record<string, stri
     });
     const payload = await response.json().catch(() => undefined);
     if (!response.ok) {
-      const errorPayload = payload as AnyJson | undefined;
-      const message = errorPayload?.error?.message ?? errorPayload?.error ?? `Provider request failed with ${response.status}`;
+      const errorPayload = asJsonRecord(payload);
+      const error = asJsonRecord(errorPayload.error);
+      const message = getString(error.message)
+        || getString(errorPayload.error)
+        || `Provider request failed with ${response.status}`;
       throw new Error(String(message));
     }
     return payload;
@@ -275,12 +286,12 @@ function normalizeLayout(value: unknown, index: number): DeckSlide['layout'] {
   return layouts[index % layouts.length];
 }
 
-function parseJsonObject(text: string) {
+function parseJsonObject(text: string): Partial<DeckOutline> {
   const trimmed = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
   const start = trimmed.indexOf('{');
   const end = trimmed.lastIndexOf('}');
   if (start === -1 || end === -1) throw new Error('Provider did not return a JSON object.');
-  return JSON.parse(trimmed.slice(start, end + 1));
+  return JSON.parse(trimmed.slice(start, end + 1)) as Partial<DeckOutline>;
 }
 
 function uniqueSourceRefs(refs: SourceRef[]) {
@@ -303,4 +314,16 @@ function normalizeSourceRefs(value: unknown): SourceRef[] {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function asJsonArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function getString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
 }
