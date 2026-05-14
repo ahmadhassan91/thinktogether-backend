@@ -1,6 +1,6 @@
 """Learner survey duplicate guard.
 
-Revision ID: 005_facilitator_feedback_survey_guard
+Revision ID: 005_feedback_guard
 Revises: 004_invite_revocations
 Create Date: 2026-05-13 00:05:00
 """
@@ -10,7 +10,7 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = "005_facilitator_feedback_survey_guard"
+revision: str = "005_feedback_guard"
 down_revision: Union[str, Sequence[str], None] = "004_invite_revocations"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -44,7 +44,7 @@ def upgrade() -> None:
           WHERE survey_submitted;
 
         INSERT INTO schema_migrations (id, name, applied_at)
-        VALUES ('005_facilitator_feedback_survey_guard', 'Learner survey duplicate guard', NOW())
+        VALUES ('005_feedback_guard', 'Learner survey duplicate guard', NOW())
         ON CONFLICT (id) DO NOTHING;
         """
     )
@@ -53,7 +53,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     run_many(
         """
-        DELETE FROM schema_migrations WHERE id = '005_facilitator_feedback_survey_guard';
+        DELETE FROM schema_migrations WHERE id = '005_feedback_guard';
         DROP INDEX IF EXISTS facilitator_feedback_unique_submitted_survey_idx;
         """
     )

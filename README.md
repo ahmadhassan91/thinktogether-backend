@@ -59,7 +59,7 @@ The API creates tables automatically on startup. The test suite resets only the 
 Alembic is configured in `alembic.ini` with a complete linear chain:
 
 ```text
-001_foundation -> 002_identity_columns -> 003_completion_records -> 004_invite_revocations
+001_foundation -> 002_identity_columns -> 003_completion_records -> 004_invite_revocations -> 005_feedback_guard -> 006_admin_audit
 ```
 
 Use Alembic for production and shared environment schema changes:
@@ -70,7 +70,7 @@ npm run db:upgrade
 npm run db:current
 ```
 
-The expected single head is `004_invite_revocations`. The Alembic migrations are idempotent against the existing local database and also bridge the legacy `schema_migrations` table, so this project should not be stamped manually.
+The expected single head is `006_admin_audit`. The Alembic migrations are idempotent against the existing local database and also bridge the legacy `schema_migrations` table, so this project should not be stamped manually.
 
 ## Local Development
 
