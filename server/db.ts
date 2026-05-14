@@ -379,7 +379,7 @@ const migrations = [
   `,
   },
   {
-    id: '005_facilitator_feedback_survey_guard',
+    id: '005_feedback_guard',
     name: 'Learner survey duplicate guard',
     sql: `
     WITH ranked_surveys AS (
@@ -401,7 +401,7 @@ const migrations = [
   `,
   },
   {
-    id: '006_admin_audit_events',
+    id: '006_admin_audit',
     name: 'Admin audit event trail',
     sql: `
     CREATE TABLE IF NOT EXISTS admin_audit_events (

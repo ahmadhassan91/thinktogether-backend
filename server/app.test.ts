@@ -624,8 +624,8 @@ describe('Think Together training API', () => {
       { id: '002_identity_columns', name: 'Learner identity and content attempt columns' },
       { id: '003_completion_records', name: 'Durable learner completion records' },
       { id: '004_invite_revocations', name: 'Invite revocation support' },
-      { id: '005_facilitator_feedback_survey_guard', name: 'Learner survey duplicate guard' },
-      { id: '006_admin_audit_events', name: 'Admin audit event trail' },
+      { id: '005_feedback_guard', name: 'Learner survey duplicate guard' },
+      { id: '006_admin_audit', name: 'Admin audit event trail' },
     ]);
 
     const clearanceExport = await request(handle.app)
