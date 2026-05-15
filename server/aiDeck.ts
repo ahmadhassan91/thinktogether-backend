@@ -14,11 +14,22 @@ export type DeckOutlineRequest = {
 export type DeckSlide = {
   title: string;
   objective: string;
-  layout: 'process' | 'matrix' | 'scenario' | 'commitment';
+  layout: 'process' | 'matrix' | 'scenario' | 'commitment' | 'loop' | 'pyramid' | 'timeline' | 'scorecard';
   talkingPoints: string[];
   activityPrompt: string;
   facilitatorNotes: string;
   sourceRefs: SourceRef[];
+  visualSpec: DeckVisualSpec;
+};
+
+export type DeckVisualSpec = {
+  type: 'flow' | 'loop' | 'matrix' | 'scenario-ladder' | 'commitment-map' | 'pyramid' | 'timeline' | 'scorecard';
+  headline: string;
+  stages: Array<{
+    label: string;
+    detail?: string;
+  }>;
+  callout?: string;
 };
 
 export type DeckOutline = {
@@ -121,8 +132,14 @@ Required JSON shape:
     {
       "title": "string",
       "objective": "string",
-      "layout": "process | matrix | scenario | commitment",
+      "layout": "process | matrix | scenario | commitment | loop | pyramid | timeline | scorecard",
       "talkingPoints": ["string", "string", "string"],
+      "visualSpec": {
+        "type": "flow | loop | matrix | scenario-ladder | commitment-map | pyramid | timeline | scorecard",
+        "headline": "short visual claim",
+        "stages": [{"label": "2-5 words", "detail": "optional proof or instruction under 14 words"}],
+        "callout": "optional high-emphasis metric or facilitation cue"
+      },
       "activityPrompt": "string",
       "facilitatorNotes": "string",
       "sourceRefs": [{"artifact": "string", "locator": "string"}]
@@ -139,6 +156,8 @@ Rules:
 - Write as a professional facilitator deck, not a classroom handout.
 - Avoid generic training filler; each slide needs a clear claim, a proof point, and a concrete activity.
 - Choose varied slide layouts: process for routines, matrix for comparisons, scenario for situational practice, commitment for transfer/next steps.
+- At least half the slides must include an infographic-friendly visualSpec: loop for 10:2 rhythm, pyramid for PBIS tiers, timeline for training sequence, scorecard for readiness or checks.
+- visualSpec.stages must be concise enough for editable PowerPoint shapes, not paragraphs.
 - Talking points should be short labels or evidence statements that can become infographic cards.
 - Return exactly ${request.slideCount} slides.
 - Return JSON only, no markdown.`;
@@ -273,6 +292,7 @@ function normalizeDeckOutline(payload: Partial<DeckOutline>, request: DeckOutlin
       activityPrompt: String(slide?.activityPrompt || 'Pause for a short pair practice.'),
       facilitatorNotes: String(slide?.facilitatorNotes || 'Keep the activity grounded in site realities.'),
       sourceRefs: normalizeSourceRefs(slide?.sourceRefs),
+      visualSpec: normalizeVisualSpec(slide?.visualSpec, slide, index),
     })),
     handoffNotes: stringArray(payload.handoffNotes).slice(0, 5),
     sourceArtifacts,
@@ -281,9 +301,79 @@ function normalizeDeckOutline(payload: Partial<DeckOutline>, request: DeckOutlin
 }
 
 function normalizeLayout(value: unknown, index: number): DeckSlide['layout'] {
-  if (value === 'process' || value === 'matrix' || value === 'scenario' || value === 'commitment') return value;
-  const layouts: DeckSlide['layout'][] = ['process', 'matrix', 'scenario', 'commitment'];
+  if (
+    value === 'process'
+    || value === 'matrix'
+    || value === 'scenario'
+    || value === 'commitment'
+    || value === 'loop'
+    || value === 'pyramid'
+    || value === 'timeline'
+    || value === 'scorecard'
+  ) return value;
+  const layouts: DeckSlide['layout'][] = ['loop', 'matrix', 'scenario', 'pyramid', 'timeline', 'commitment', 'scorecard', 'process'];
   return layouts[index % layouts.length];
+}
+
+function normalizeVisualSpec(value: unknown, slide: unknown, index: number): DeckVisualSpec {
+  const source = asJsonRecord(value);
+  const slideRecord = asJsonRecord(slide);
+  const layout = normalizeLayout(slideRecord.layout, index);
+  const title = getString(slideRecord.title, `Slide ${index + 1}`);
+  const points = stringArray(slideRecord.talkingPoints).slice(0, 5);
+  const fallbackType = visualTypeForLayout(layout, title, index);
+  const rawType = source.type;
+  const type = isVisualType(rawType) ? rawType : fallbackType;
+  const rawStages = Array.isArray(source.stages) ? source.stages : [];
+  const stages = rawStages
+    .map((stage) => {
+      const record = asJsonRecord(stage);
+      return {
+        label: compactString(getString(record.label), 34),
+        detail: compactString(getString(record.detail), 92),
+      };
+    })
+    .filter((stage) => stage.label);
+  const fallbackStages = points.length ? points : ['Teach it', 'Model it', 'Practice it', 'Check it'];
+
+  return {
+    type,
+    headline: compactString(getString(source.headline, title), 78),
+    stages: (stages.length ? stages : fallbackStages.map((point) => ({ label: compactString(point, 34) }))).slice(0, 5),
+    callout: compactString(getString(source.callout), 120) || undefined,
+  };
+}
+
+function isVisualType(value: unknown): value is DeckVisualSpec['type'] {
+  return value === 'flow'
+    || value === 'loop'
+    || value === 'matrix'
+    || value === 'scenario-ladder'
+    || value === 'commitment-map'
+    || value === 'pyramid'
+    || value === 'timeline'
+    || value === 'scorecard';
+}
+
+function visualTypeForLayout(layout: DeckSlide['layout'], title: string, index: number): DeckVisualSpec['type'] {
+  const normalized = title.toLowerCase();
+  if (layout === 'loop' || normalized.includes('10:2') || normalized.includes('rhythm')) return 'loop';
+  if (layout === 'pyramid' || normalized.includes('tier')) return 'pyramid';
+  if (layout === 'timeline' || normalized.includes('sequence')) return 'timeline';
+  if (layout === 'scorecard' || normalized.includes('check') || normalized.includes('readiness')) return 'scorecard';
+  if (layout === 'matrix') return 'matrix';
+  if (layout === 'scenario') return 'scenario-ladder';
+  if (layout === 'commitment') return 'commitment-map';
+  return index % 4 === 0 ? 'loop' : 'flow';
+}
+
+function compactString(value: string, maxLength = 80) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  const sliced = normalized.slice(0, Math.max(0, maxLength - 1));
+  const breakAt = Math.max(sliced.lastIndexOf('.'), sliced.lastIndexOf(';'), sliced.lastIndexOf(','));
+  const base = breakAt > maxLength * 0.45 ? sliced.slice(0, breakAt) : sliced;
+  return `${base.trim()}...`;
 }
 
 function parseJsonObject(text: string): Partial<DeckOutline> {

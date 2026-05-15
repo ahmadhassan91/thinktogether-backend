@@ -170,8 +170,14 @@ export type AiDeckOutline = {
   slides: Array<{
     title: string
     objective: string
-    layout?: 'process' | 'matrix' | 'scenario' | 'commitment'
+    layout?: 'process' | 'matrix' | 'scenario' | 'commitment' | 'loop' | 'pyramid' | 'timeline' | 'scorecard'
     talkingPoints: string[]
+    visualSpec?: {
+      type: 'flow' | 'loop' | 'matrix' | 'scenario-ladder' | 'commitment-map' | 'pyramid' | 'timeline' | 'scorecard'
+      headline: string
+      stages: Array<{ label: string; detail?: string }>
+      callout?: string
+    }
     activityPrompt: string
     facilitatorNotes: string
     sourceRefs: Array<{ artifact: string; locator: string }>

@@ -769,7 +769,19 @@ describe('Think Together training API', () => {
         {
           title: 'Open with the why',
           objective: 'Connect PBIS to program culture.',
+          layout: 'loop',
           talkingPoints: ['Name the expectation', 'Model the routine', 'Invite practice'],
+          visualSpec: {
+            type: 'loop',
+            headline: 'Keep content short and practice visible',
+            stages: [
+              { label: 'Name it', detail: 'State the expectation' },
+              { label: 'Model it', detail: 'Show the routine' },
+              { label: 'Practice it', detail: 'Two-minute rehearsal' },
+              { label: 'Check it', detail: 'Confirm transfer' },
+            ],
+            callout: '10 minutes content + 2 minutes practice',
+          },
           activityPrompt: 'Pair-share one attention getter.',
           facilitatorNotes: 'Keep examples site-specific.',
           sourceRefs: [{ artifact: 'PBIS PPT Master.pptx', locator: 'Slide 4: PBIS objectives' }],
@@ -819,6 +831,12 @@ describe('Think Together training API', () => {
         }),
       );
       expect(response.body.outline.slides[0].sourceRefs[0].artifact).toBe('PBIS PPT Master.pptx');
+      expect(response.body.outline.slides[0].visualSpec).toEqual(
+        expect.objectContaining({
+          type: 'loop',
+          headline: 'Keep content short and practice visible',
+        }),
+      );
     } finally {
       if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
       else delete process.env.GEMINI_API_KEY;

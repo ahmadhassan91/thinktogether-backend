@@ -61,8 +61,9 @@ export async function renderDeckPptx(outline: DeckOutline): Promise<Buffer> {
     bodyFontFace: 'Aptos',
   };
 
+  const slides = Array.isArray(outline.slides) ? outline.slides : [];
   addTitleSlide(pptx, outline);
-  outline.slides.forEach((slide, index) => addTrainingSlide(pptx, outline, slide, index));
+  slides.forEach((slide, index) => addTrainingSlide(pptx, outline, slide, index));
   addFacilitatorHandoffSlide(pptx, outline);
   addSourceSlide(pptx, outline);
 
@@ -131,8 +132,8 @@ function addTitleSlide(pptx: pptxgen, outline: DeckOutline) {
     fontSize: 15,
     margin: 0,
   });
-  addObjectiveBand(slide, outline.learningObjectives.slice(0, 3));
-  addTitleSourceBadge(slide, outline.sourceArtifacts);
+  addObjectiveBand(slide, safeList(outline.learningObjectives).slice(0, 3));
+  addTitleSourceBadge(slide, safeList(outline.sourceArtifacts));
   addFooter(slide, outline, 'Title');
 }
 
@@ -164,11 +165,20 @@ function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSl
     fit: 'shrink',
   });
 
-  if (slideData.layout === 'matrix') {
+  const visualType = resolveVisualType(slideData);
+  if (visualType === 'loop') {
+    addLoopSlide(slide, slideData);
+  } else if (visualType === 'pyramid') {
+    addPyramidSlide(slide, slideData);
+  } else if (visualType === 'timeline') {
+    addTimelineSlide(slide, slideData);
+  } else if (visualType === 'scorecard') {
+    addScorecardSlide(slide, slideData);
+  } else if (visualType === 'matrix') {
     addMatrixSlide(slide, slideData);
-  } else if (slideData.layout === 'scenario') {
+  } else if (visualType === 'scenario-ladder') {
     addScenarioSlide(slide, slideData);
-  } else if (slideData.layout === 'commitment') {
+  } else if (visualType === 'commitment-map') {
     addCommitmentSlide(slide, slideData);
   } else {
     addProcessSlide(slide, slideData);
@@ -176,6 +186,290 @@ function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSl
 
   addSourceFootnote(slide, slideData);
   addFooter(slide, outline, `Slide ${index + 1}`);
+}
+
+function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const stages = visualStages(slideData, 4);
+  addSectionLabel(slide, '10:2 practice loop', { x: 0.75, y: 2.08, w: 3.2, h: 0.3 }, COLORS.orange);
+  slide.addShape('ellipse', {
+    x: 2.28,
+    y: 2.34,
+    w: 2.05,
+    h: 2.05,
+    fill: { color: COLORS.softTeal },
+    line: { color: COLORS.teal, width: 2 },
+  });
+  slide.addText('10:2', {
+    x: 2.58,
+    y: 2.86,
+    w: 1.45,
+    h: 0.45,
+    color: COLORS.orange,
+    fontFace: 'Aptos Display',
+    fontSize: 26,
+    bold: true,
+    align: 'center',
+    margin: 0,
+  });
+  slide.addText('teach + practice', {
+    x: 2.62,
+    y: 3.34,
+    w: 1.35,
+    h: 0.18,
+    color: COLORS.darkTeal,
+    fontSize: 7.8,
+    bold: true,
+    align: 'center',
+    margin: 0,
+    fit: 'shrink',
+  });
+
+  const nodes = [
+    { x: 0.82, y: 2.28, accent: COLORS.orange },
+    { x: 4.7, y: 2.28, accent: COLORS.teal },
+    { x: 4.7, y: 4.28, accent: COLORS.green },
+    { x: 0.82, y: 4.28, accent: COLORS.yellow },
+  ];
+  const lines = [
+    { x: 2.02, y: 2.83, w: 0.58, h: 0, color: COLORS.orange },
+    { x: 4.08, y: 2.83, w: 0.62, h: 0, color: COLORS.teal },
+    { x: 4.08, y: 4.86, w: 0.62, h: 0, color: COLORS.green },
+    { x: 2.02, y: 4.86, w: 0.58, h: 0, color: COLORS.yellow },
+  ];
+  lines.forEach((line) => {
+    slide.addShape(SHAPE.line, {
+      x: line.x,
+      y: line.y,
+      w: line.w,
+      h: line.h,
+      line: { color: line.color, width: 1.4, endArrowType: 'triangle' },
+    });
+  });
+
+  stages.slice(0, 4).forEach((stage, index) => {
+    const node = nodes[index];
+    slide.addShape(SHAPE.roundRect, {
+      x: node.x,
+      y: node.y,
+      w: 1.2,
+      h: 1.12,
+      rectRadius: 0.08,
+      fill: { color: index % 2 === 0 ? COLORS.white : COLORS.softYellow },
+      line: { color: node.accent, transparency: 10 },
+    });
+    addNumberBadge(slide, String(index + 1), { x: node.x + 0.1, y: node.y + 0.12, w: 0.28, h: 0.28 }, node.accent);
+    slide.addText(stage.label, {
+      x: node.x + 0.15,
+      y: node.y + 0.52,
+      w: 0.9,
+      h: 0.28,
+      color: COLORS.ink,
+      fontSize: scaledFont(stage.label, { base: 8.4, medium: 7.5, small: 6.7, mediumAt: 20, smallAt: 30 }),
+      bold: true,
+      align: 'center',
+      fit: 'shrink',
+      margin: 0,
+    });
+    if (stage.detail) {
+      slide.addText(compact(stage.detail, 46), {
+        x: node.x + 0.16,
+        y: node.y + 0.84,
+        w: 0.88,
+        h: 0.18,
+        color: COLORS.muted,
+        fontSize: 5.8,
+        align: 'center',
+        fit: 'shrink',
+        margin: 0,
+      });
+    }
+  });
+  addVisualCallout(slide, slideData, { x: 0.88, y: 5.62, w: 5.65, h: 0.55 });
+  addActivityCard(slide, slideData.activityPrompt, 0, { x: 7.15, y: 1.82, w: 5.28, h: 2.0 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 4.08, w: 5.28, h: 1.74 });
+}
+
+function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const stages = visualStages(slideData, 3);
+  addSectionLabel(slide, 'PBIS tier pyramid', { x: 0.75, y: 2.08, w: 3.0, h: 0.3 }, COLORS.green);
+  const bands = [
+    { x: 2.18, y: 2.34, w: 2.05, h: 0.76, color: COLORS.orange, label: 'Tier 3' },
+    { x: 1.52, y: 3.25, w: 3.38, h: 0.82, color: COLORS.yellow, label: 'Tier 2' },
+    { x: 0.86, y: 4.24, w: 4.72, h: 0.9, color: COLORS.teal, label: 'Tier 1' },
+  ];
+  bands.forEach((band, index) => {
+    const stage = stages[index] ?? stages[stages.length - 1];
+    slide.addShape(SHAPE.roundRect, {
+      x: band.x,
+      y: band.y,
+      w: band.w,
+      h: band.h,
+      rectRadius: 0.05,
+      fill: { color: index === 1 ? COLORS.softYellow : index === 2 ? COLORS.softTeal : 'FDE9DF' },
+      line: { color: band.color, width: 1.2 },
+    });
+    slide.addText(band.label, {
+      x: band.x + 0.18,
+      y: band.y + 0.18,
+      w: 0.72,
+      h: 0.18,
+      color: band.color,
+      fontSize: 7.5,
+      bold: true,
+      margin: 0,
+    });
+    slide.addText(stage.label, {
+      x: band.x + 0.92,
+      y: band.y + 0.16,
+      w: band.w - 1.08,
+      h: 0.22,
+      color: COLORS.ink,
+      fontSize: scaledFont(stage.label, { base: 9.6, medium: 8.6, small: 7.6, mediumAt: 32, smallAt: 44 }),
+      bold: true,
+      align: 'center',
+      fit: 'shrink',
+      margin: 0,
+    });
+    if (stage.detail) {
+      slide.addText(compact(stage.detail, 58), {
+        x: band.x + 0.92,
+        y: band.y + 0.45,
+        w: band.w - 1.08,
+        h: 0.18,
+        color: COLORS.muted,
+        fontSize: 6.1,
+        align: 'center',
+        fit: 'shrink',
+        margin: 0,
+      });
+    }
+  });
+  addVisualCallout(slide, slideData, { x: 0.9, y: 5.52, w: 4.72, h: 0.58 });
+  addActivityCard(slide, slideData.activityPrompt, 1, { x: 7.15, y: 1.82, w: 5.28, h: 2.06 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 4.16, w: 5.28, h: 1.72 });
+}
+
+function addTimelineSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const stages = visualStages(slideData, 4);
+  addSectionLabel(slide, 'Training sequence', { x: 0.75, y: 2.08, w: 2.95, h: 0.3 }, COLORS.darkTeal);
+  slide.addShape(SHAPE.line, {
+    x: 1.12,
+    y: 3.58,
+    w: 5.0,
+    h: 0,
+    line: { color: COLORS.teal, width: 2.4, endArrowType: 'triangle' },
+  });
+  stages.slice(0, 4).forEach((stage, index) => {
+    const x = 0.9 + index * 1.65;
+    const accent = [COLORS.orange, COLORS.teal, COLORS.green, COLORS.yellow][index] ?? COLORS.teal;
+    slide.addShape('ellipse', {
+      x,
+      y: 3.18,
+      w: 0.72,
+      h: 0.72,
+      fill: { color: accent },
+      line: { color: accent },
+    });
+    slide.addText(String(index + 1), {
+      x,
+      y: 3.4,
+      w: 0.72,
+      h: 0.16,
+      color: COLORS.white,
+      fontSize: 9,
+      bold: true,
+      align: 'center',
+      margin: 0,
+    });
+    slide.addShape(SHAPE.roundRect, {
+      x: x - 0.18,
+      y: 4.18,
+      w: 1.08,
+      h: 0.88,
+      rectRadius: 0.06,
+      fill: { color: index % 2 === 0 ? COLORS.white : COLORS.softTeal },
+      line: { color: COLORS.line },
+    });
+    slide.addText(stage.label, {
+      x: x - 0.08,
+      y: 4.4,
+      w: 0.88,
+      h: 0.25,
+      color: COLORS.ink,
+      fontSize: scaledFont(stage.label, { base: 7.8, medium: 7, small: 6.2, mediumAt: 22, smallAt: 30 }),
+      bold: true,
+      align: 'center',
+      fit: 'shrink',
+      margin: 0,
+    });
+  });
+  addVisualCallout(slide, slideData, { x: 0.9, y: 5.62, w: 5.3, h: 0.52 });
+  addActivityCard(slide, slideData.activityPrompt, 0, { x: 7.15, y: 1.82, w: 5.28, h: 2.06 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 4.16, w: 5.28, h: 1.72 });
+}
+
+function addScorecardSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
+  const stages = visualStages(slideData, 4);
+  addSectionLabel(slide, 'Readiness scorecard', { x: 0.75, y: 2.08, w: 3.1, h: 0.3 }, COLORS.teal);
+  stages.slice(0, 4).forEach((stage, index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = 0.78 + col * 2.95;
+    const y = 2.45 + row * 1.34;
+    const accent = [COLORS.teal, COLORS.green, COLORS.orange, COLORS.yellow][index] ?? COLORS.teal;
+    slide.addShape(SHAPE.roundRect, {
+      x,
+      y,
+      w: 2.55,
+      h: 1.0,
+      rectRadius: 0.08,
+      fill: { color: index === 1 ? COLORS.softGreen : index === 2 ? COLORS.softYellow : COLORS.white },
+      line: { color: COLORS.line },
+    });
+    slide.addShape('ellipse', {
+      x: x + 0.2,
+      y: y + 0.22,
+      w: 0.42,
+      h: 0.42,
+      fill: { color: accent },
+      line: { color: accent },
+    });
+    slide.addText(index === 2 ? '!' : 'OK', {
+      x: x + 0.2,
+      y: y + 0.3,
+      w: 0.42,
+      h: 0.12,
+      color: COLORS.white,
+      fontSize: 8,
+      bold: true,
+      align: 'center',
+      margin: 0,
+    });
+    slide.addText(stage.label, {
+      x: x + 0.78,
+      y: y + 0.2,
+      w: 1.48,
+      h: 0.24,
+      color: COLORS.ink,
+      fontSize: scaledFont(stage.label, { base: 8.8, medium: 7.8, small: 7, mediumAt: 25, smallAt: 36 }),
+      bold: true,
+      fit: 'shrink',
+      margin: 0,
+    });
+    slide.addText(compact(stage.detail || 'Evidence ready for review', 58), {
+      x: x + 0.78,
+      y: y + 0.52,
+      w: 1.52,
+      h: 0.22,
+      color: COLORS.muted,
+      fontSize: 6.2,
+      fit: 'shrink',
+      margin: 0,
+    });
+  });
+  addVisualCallout(slide, slideData, { x: 0.9, y: 5.42, w: 5.2, h: 0.65 });
+  addActivityCard(slide, slideData.activityPrompt, 1, { x: 7.15, y: 1.82, w: 5.28, h: 2.06 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 4.16, w: 5.28, h: 1.72 });
 }
 
 function addProcessSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
@@ -476,7 +770,8 @@ function addCommitmentSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
 function addFacilitatorHandoffSlide(pptx: pptxgen, outline: DeckOutline) {
   const slide = pptx.addSlide();
   addBackground(slide);
-  addTopBar(slide, outline.slides.length + 1, outline.slides.length + 2);
+  const slideCount = safeList(outline.slides).length;
+  addTopBar(slide, slideCount + 1, slideCount + 2);
   slide.addText('Facilitator Handoff', {
     x: MARGIN_X,
     y: 0.86,
@@ -488,7 +783,8 @@ function addFacilitatorHandoffSlide(pptx: pptxgen, outline: DeckOutline) {
     bold: true,
     margin: 0,
   });
-  const notes = outline.handoffNotes.length > 0 ? outline.handoffNotes : [
+  const handoffNotes = safeList(outline.handoffNotes);
+  const notes = handoffNotes.length > 0 ? handoffNotes : [
     'Review source alignment before using this draft with staff.',
     'Localize examples to the site and cohort.',
     'Keep facilitation human-led and practice-oriented.',
@@ -559,7 +855,7 @@ function addSourceSlide(pptx: pptxgen, outline: DeckOutline) {
     fontSize: 13,
     margin: 0,
   });
-  const artifacts = outline.sourceArtifacts.slice(0, 10);
+  const artifacts = safeList(outline.sourceArtifacts).slice(0, 10);
   artifacts.forEach((artifact, index) => {
     const row = Math.floor(index / 2);
     const col = index % 2;
@@ -827,10 +1123,59 @@ function addFacilitatorNote(slide: pptxgen.Slide, note: string, box: Box = { x: 
   });
 }
 
+function resolveVisualType(slideData: DeckSlide): NonNullable<DeckSlide['visualSpec']>['type'] {
+  if (slideData.visualSpec?.type) return slideData.visualSpec.type;
+  if (slideData.layout === 'loop') return 'loop';
+  if (slideData.layout === 'pyramid') return 'pyramid';
+  if (slideData.layout === 'timeline') return 'timeline';
+  if (slideData.layout === 'scorecard') return 'scorecard';
+  if (slideData.layout === 'matrix') return 'matrix';
+  if (slideData.layout === 'scenario') return 'scenario-ladder';
+  if (slideData.layout === 'commitment') return 'commitment-map';
+  return 'flow';
+}
+
+function visualStages(slideData: DeckSlide, minimum: number) {
+  const visualStages = slideData.visualSpec?.stages?.filter((stage) => stage.label) ?? [];
+  const talkingPointStages = safeList(slideData.talkingPoints)
+    .filter(Boolean)
+    .map((point) => ({ label: compact(point, 34), detail: '' }));
+  const fallback = [
+    { label: 'Teach it', detail: 'Name the expected routine' },
+    { label: 'Model it', detail: 'Show what success looks like' },
+    { label: 'Practice it', detail: 'Give staff a short rehearsal' },
+    { label: 'Check it', detail: 'Confirm transfer to site' },
+    { label: 'Reinforce', detail: 'Notice the expected behavior' },
+  ];
+  return [...visualStages, ...talkingPointStages, ...fallback].slice(0, Math.max(minimum, visualStages.length));
+}
+
+function addVisualCallout(slide: pptxgen.Slide, slideData: DeckSlide, box: Box) {
+  const text = slideData.visualSpec?.callout || slideData.visualSpec?.headline || slideData.objective;
+  slide.addShape(SHAPE.roundRect, {
+    ...box,
+    rectRadius: 0.06,
+    fill: { color: COLORS.softYellow },
+    line: { color: 'F3C6A8' },
+  });
+  slide.addText(compact(text, textLimitForBox(box, 120)), {
+    x: box.x + 0.18,
+    y: box.y + 0.16,
+    w: box.w - 0.36,
+    h: box.h - 0.22,
+    color: COLORS.orange,
+    fontSize: scaledFont(text, { base: 8.5, medium: 7.6, small: 6.8, mediumAt: 78, smallAt: 112 }),
+    bold: true,
+    fit: 'shrink',
+    margin: 0,
+  });
+}
+
 function padPoints(points: string[], minimum: number) {
   const fallback = ['Teach the expectation', 'Practice the routine', 'Reinforce the behavior', 'Transfer to site'];
-  const combined = [...points.filter(Boolean).map((point) => compact(point, 86)), ...fallback];
-  return combined.slice(0, Math.max(minimum, points.length));
+  const validPoints = safeList(points);
+  const combined = [...validPoints.filter(Boolean).map((point) => compact(point, 86)), ...fallback];
+  return combined.slice(0, Math.max(minimum, validPoints.length));
 }
 
 function addObjectiveBand(slide: pptxgen.Slide, objectives: string[]) {
@@ -931,7 +1276,7 @@ function compact(value: string, maxLength: number) {
 }
 
 function addSourceFootnote(slide: pptxgen.Slide, slideData: DeckSlide) {
-  const refs = slideData.sourceRefs.map((ref) => `${ref.artifact} (${ref.locator})`).join(' | ');
+  const refs = safeList(slideData.sourceRefs).map((ref) => `${ref.artifact} (${ref.locator})`).join(' | ');
   slide.addText(refs || 'Source: Think Together PBIS/SOP artifacts', {
     x: MARGIN_X,
     y: 6.55,
@@ -943,6 +1288,10 @@ function addSourceFootnote(slide: pptxgen.Slide, slideData: DeckSlide) {
     margin: 0,
     fit: 'shrink',
   });
+}
+
+function safeList<T>(value: T[] | undefined | null): T[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function addFooter(slide: pptxgen.Slide, outline: DeckOutline, label: string) {
