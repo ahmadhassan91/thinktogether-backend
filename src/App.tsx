@@ -54,13 +54,16 @@ import { LearnerFlow } from './features/learner/LearnerFlow'
 import type { Learner, LearnerModule } from './features/learner/learnerProgress'
 import thinkTogetherLogo from './assets/think-together-logo.png'
 
-type WorkspaceView = 'learner' | 'practice' | 'assist' | 'admin' | 'plan'
+type WorkspaceView = 'learner' | 'practice' | 'assist' | 'admin' | 'users' | 'cohorts' | 'deck' | 'plan'
 
 const navItems: Array<{ view: WorkspaceView; label: string }> = [
   { view: 'learner', label: 'Learn' },
   { view: 'practice', label: 'Practice' },
   { view: 'assist', label: 'Assist' },
   { view: 'admin', label: 'Admin' },
+  { view: 'users', label: 'Users' },
+  { view: 'cohorts', label: 'Cohorts' },
+  { view: 'deck', label: 'Decks' },
   { view: 'plan', label: 'Plan' },
 ]
 
@@ -139,7 +142,7 @@ function App() {
   const learnerModules = useMemo(() => (content ? toLearnerModules(content) : []), [content])
   const coachScenario = useMemo(() => (content ? toCoachScenario(content) : null), [content])
 
-  const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => item.view !== 'admin')
+  const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => !['admin', 'users', 'cohorts', 'deck'].includes(item.view))
   const activeViewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -281,7 +284,7 @@ function App() {
               className="app-sidebar__nav-button"
               data-active={view === item.view}
               key={item.view}
-              onClick={() => setView(item.view === 'admin' && user.role !== 'admin' ? 'learner' : item.view)}
+              onClick={() => setView(['admin', 'users', 'cohorts', 'deck'].includes(item.view) && user.role !== 'admin' ? 'learner' : item.view)}
               type="button"
             >
               {item.label}
@@ -450,9 +453,10 @@ function renderView({
     return <KnowledgeAssistantPanel sourceLibrary={sourceLibrary} />
   }
 
-  if (view === 'admin' && isAdmin) {
+  if (['admin', 'users', 'cohorts'].includes(view) && isAdmin) {
     return (
       <AdminDashboard
+        mode={view === 'users' ? 'users' : view === 'cohorts' ? 'cohorts' : 'overview'}
         dashboard={dashboard ?? undefined}
         learners={adminLearners}
         managementCohorts={adminCohorts}
@@ -464,6 +468,10 @@ function renderView({
         onDownloadExport={onDownloadExport}
       />
     )
+  }
+
+  if (view === 'deck' && isAdmin) {
+    return <DeckStudio />
   }
 
   if (view === 'plan') {
@@ -565,6 +573,35 @@ function MilestonePlan({
 }) {
   const mvp = getMilestonesByPhase('MVP')
   const phaseTwo = getMilestonesByPhase('Phase 2')
+  return (
+    <main className="plan-view" aria-labelledby="plan-title">
+      <header>
+        <p className="app-hero__label">Delivery plan</p>
+        <h1 id="plan-title">MVP and Phase 2 Milestones</h1>
+        <p>
+          The full CSV lives at <code>Think_Together_MVP_Phase_Plan.csv</code>. This
+          view keeps the implementation team aligned inside the demo.
+        </p>
+      </header>
+
+      <section className="plan-columns">
+        <MilestoneList title="MVP" milestones={mvp} status="current" />
+        <MilestoneList title="Phase 2" milestones={phaseTwo} status="locked" />
+      </section>
+
+      <SourceIntelligencePanel
+        isAdmin={isAdmin}
+        sourceUsageSummary={sourceUsageSummary}
+        sourceQaFlags={sourceQaFlags}
+      />
+      <SourceLibraryPanel sourceLibrary={sourceLibrary} />
+
+    </main>
+  )
+}
+
+
+function DeckStudio() {
   const [providers, setProviders] = useState<AiProviderStatus[]>([])
   const [provider, setProvider] = useState<AiDeckProvider>('openai')
   const [topic, setTopic] = useState('Effective lesson delivery with 10:2 practice')
@@ -583,11 +620,10 @@ function MilestonePlan({
   )
 
   useEffect(() => {
-    if (!isAdmin) return
     void getAiProviders()
       .then((payload) => setProviders(payload.providers))
       .catch((error) => setDeckError(error instanceof Error ? error.message : 'Unable to load AI providers.'))
-  }, [isAdmin])
+  }, [])
 
   const fallbackProvider = deckProviders.find((item) => item.id === 'openai' && item.configured)
     ?? deckProviders.find((item) => item.id === 'gemini' && item.configured)
@@ -622,129 +658,94 @@ function MilestonePlan({
   }
 
   return (
-    <main className="plan-view" aria-labelledby="plan-title">
-      <header>
-        <p className="app-hero__label">Delivery plan</p>
-        <h1 id="plan-title">MVP and Phase 2 Milestones</h1>
-        <p>
-          The full CSV lives at <code>Think_Together_MVP_Phase_Plan.csv</code>. This
-          view keeps the implementation team aligned inside the demo.
-        </p>
-      </header>
+    <main className="deck-page" aria-labelledby="deck-studio-title">
+      <section className="deck-studio">
+        <div>
+          <p className="app-hero__label">AI deck generator</p>
+          <h1 id="deck-studio-title">Training Deck Studio</h1>
+          <p>
+            Generate a source-grounded facilitator deck and export an editable PowerPoint using the PBIS and SOP artifacts.
+            OpenAI GPT-5.2 is the premium default; Gemini remains available as the fast fallback.
+          </p>
+        </div>
 
-      <section className="plan-columns">
-        <MilestoneList title="MVP" milestones={mvp} status="current" />
-        <MilestoneList title="Phase 2" milestones={phaseTwo} status="locked" />
+        <div className="provider-strip" aria-label="AI provider status">
+          {deckProviders.map((item) => (
+            <span data-configured={item.configured} key={item.id} title={item.note}>
+              {item.label}: {item.configured ? 'ready' : 'needs key'}
+            </span>
+          ))}
+        </div>
+
+        <form className="deck-form" onSubmit={handleGenerateDeck}>
+          <label>
+            Provider
+            <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
+              <option value="openai">OpenAI GPT-5.2</option>
+              <option value="gemini">Gemini Flash</option>
+              <option value="claude">Claude Sonnet</option>
+            </select>
+          </label>
+          <label>
+            Topic
+            <input value={topic} onChange={(event) => setTopic(event.target.value)} />
+          </label>
+          <label>
+            Audience
+            <input value={audience} onChange={(event) => setAudience(event.target.value)} />
+          </label>
+          <div className="deck-form__row">
+            <label>
+              Minutes
+              <input min={10} max={180} type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
+            </label>
+            <label>
+              Slides
+              <input min={4} max={14} type="number" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
+            </label>
+          </div>
+          <div className="deck-form__actions">
+            <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
+              {isGenerating ? 'Generating preview' : 'Generate preview'}
+            </button>
+            <button
+              disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
+              onClick={handleDownloadPptx}
+              type="button"
+            >
+              {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
+            </button>
+          </div>
+          {deckError ? <p role="alert">{deckError}</p> : null}
+        </form>
+
+        {outline ? (
+          <section className="deck-outline" aria-labelledby="deck-outline-title">
+            <div>
+              <p className="app-hero__label">{outline.provider} · {outline.model}</p>
+              <h3 id="deck-outline-title">{outline.title}</h3>
+              <p>{outline.durationMinutes} minutes for {outline.audience}</p>
+            </div>
+            <div className="deck-outline__rail" aria-label="Generated deck summary">
+              <span>{outline.slides.length} editable slides</span>
+              <span>{outline.sourceArtifacts.length} source artifacts</span>
+              <span>Human review required</span>
+            </div>
+            <ol>
+              {outline.slides.map((slide, index) => (
+                <li key={`${slide.title}-${index}`}>
+                  <strong>{index + 1}. {slide.title}</strong>
+                  <span>{slide.objective}</span>
+                  <small>{slide.activityPrompt}</small>
+                </li>
+              ))}
+            </ol>
+            <div className="source-list">
+              {outline.sourceArtifacts.map((artifact) => <span key={artifact}>{artifact}</span>)}
+            </div>
+          </section>
+        ) : null}
       </section>
-
-      <SourceIntelligencePanel
-        isAdmin={isAdmin}
-        sourceUsageSummary={sourceUsageSummary}
-        sourceQaFlags={sourceQaFlags}
-      />
-      <SourceLibraryPanel sourceLibrary={sourceLibrary} />
-
-      {isAdmin ? (
-        <section className="deck-studio" aria-labelledby="deck-studio-title">
-          <div>
-            <p className="app-hero__label">Phase 2 AI deck generator</p>
-            <h2 id="deck-studio-title">Training Deck Studio</h2>
-            <p>
-              Generate a source-grounded facilitator deck and export an editable PowerPoint using the PBIS and SOP artifacts.
-              OpenAI GPT-5.2 is the premium default; Gemini remains available as the fast fallback.
-            </p>
-          </div>
-
-          <div className="provider-strip" aria-label="AI provider status">
-            {deckProviders.map((item) => (
-              <span data-configured={item.configured} key={item.id} title={item.note}>
-                {item.label}: {item.configured ? 'ready' : 'needs key'}
-              </span>
-            ))}
-          </div>
-
-          <form className="deck-form" onSubmit={handleGenerateDeck}>
-            <label>
-              Provider
-              <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
-                <option value="openai">OpenAI GPT-5.2</option>
-                <option value="gemini">Gemini Flash</option>
-                <option value="claude">Claude Sonnet</option>
-              </select>
-            </label>
-            <label>
-              Topic
-              <input value={topic} onChange={(event) => setTopic(event.target.value)} />
-            </label>
-            <label>
-              Audience
-              <input value={audience} onChange={(event) => setAudience(event.target.value)} />
-            </label>
-            <div className="deck-form__row">
-              <label>
-                Minutes
-                <input
-                  min={10}
-                  max={180}
-                  type="number"
-                  value={durationMinutes}
-                  onChange={(event) => setDurationMinutes(Number(event.target.value))}
-                />
-              </label>
-              <label>
-                Slides
-                <input
-                  min={4}
-                  max={14}
-                  type="number"
-                  value={slideCount}
-                  onChange={(event) => setSlideCount(Number(event.target.value))}
-                />
-              </label>
-            </div>
-            <div className="deck-form__actions">
-              <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
-                {isGenerating ? 'Generating preview' : 'Generate preview'}
-              </button>
-              <button
-                disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
-                onClick={handleDownloadPptx}
-                type="button"
-              >
-                {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
-              </button>
-            </div>
-            {deckError ? <p role="alert">{deckError}</p> : null}
-          </form>
-
-          {outline ? (
-            <section className="deck-outline" aria-labelledby="deck-outline-title">
-              <div>
-                <p className="app-hero__label">{outline.provider} · {outline.model}</p>
-                <h3 id="deck-outline-title">{outline.title}</h3>
-                <p>{outline.durationMinutes} minutes for {outline.audience}</p>
-              </div>
-              <div className="deck-outline__rail" aria-label="Generated deck summary">
-                <span>{outline.slides.length} editable slides</span>
-                <span>{outline.sourceArtifacts.length} source artifacts</span>
-                <span>Human review required</span>
-              </div>
-              <ol>
-                {outline.slides.map((slide, index) => (
-                  <li key={`${slide.title}-${index}`}>
-                    <strong>{index + 1}. {slide.title}</strong>
-                    <span>{slide.objective}</span>
-                    <small>{slide.activityPrompt}</small>
-                  </li>
-                ))}
-              </ol>
-              <div className="source-list">
-                {outline.sourceArtifacts.map((artifact) => <span key={artifact}>{artifact}</span>)}
-              </div>
-            </section>
-          ) : null}
-        </section>
-      ) : null}
     </main>
   )
 }

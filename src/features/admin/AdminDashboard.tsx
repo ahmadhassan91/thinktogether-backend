@@ -17,6 +17,7 @@ import type {
 } from '../../api/client'
 
 export type AdminDashboardProps = {
+  mode?: 'overview' | 'users' | 'cohorts'
   participants?: TrainingParticipant[]
   dashboard?: AdminDashboardPayload
   learners?: AdminLearner[]
@@ -67,6 +68,7 @@ const emptyCohortForm: AdminCohortInput = {
 }
 
 export function AdminDashboard({
+  mode = 'overview',
   participants = [],
   dashboard,
   learners = [],
@@ -222,92 +224,115 @@ export function AdminDashboard({
         ['Facilitator rating', kpis.facilitatorRating.toFixed(1)],
       ] as const)
 
+  const showOverview = mode === 'overview'
+  const showUsers = mode === 'users'
+  const showCohorts = mode === 'cohorts'
+  const headerCopy = {
+    overview: {
+      eyebrow: 'Think Together admin MVP',
+      title: 'Training Operations Dashboard',
+    },
+    users: {
+      eyebrow: 'User administration',
+      title: 'Learners and Invites',
+    },
+    cohorts: {
+      eyebrow: 'Cohort administration',
+      title: 'Cohorts and Assignments',
+    },
+  }[mode]
+
   return (
     <section style={{ color: '#1d2430', fontFamily: 'system-ui, sans-serif', padding: '2rem', textAlign: 'left' }}>
       <header style={{ marginBottom: '1.5rem' }}>
         <p style={{ color: '#5b6675', fontSize: '0.9rem', fontWeight: 700, margin: 0 }}>
-          Think Together admin MVP
+          {headerCopy.eyebrow}
         </p>
         <h1 style={{ fontSize: '2rem', letterSpacing: 0, margin: '0.25rem 0 0' }}>
-          Training Operations Dashboard
+          {headerCopy.title}
         </h1>
       </header>
 
-      <div
-        aria-label="Training KPI strip"
-        style={{
-          display: 'grid',
-          gap: '0.75rem',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-          marginBottom: '1.25rem',
-        }}
-      >
-        {kpiItems.map(([label, value]) => (
+      {showOverview ? (
+        <>
           <div
-            aria-label={`${label} KPI`}
-            key={label}
-            style={{ border: '1px solid #d8dee7', borderRadius: 8, padding: '0.8rem' }}
-          >
-            <div style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, textTransform: 'uppercase' }}>
-              {label}
-            </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
-        {(dashboard
-          ? ['Postgres-backed data', 'Role-gated admin API', 'CSV export endpoint']
-          : ['CSV import/export', 'LMS verified/exported status', 'No ADP writeback']
-        ).map((boundary) => (
-          <span key={boundary} style={{ ...chipStyle, background: '#eef4ff', color: '#27446d' }}>
-            {boundary}
-          </span>
-        ))}
-      </div>
-
-      <section
-        aria-labelledby="operational-readiness-heading"
-        style={{
-          border: '1px solid #d8dee7',
-          borderRadius: 8,
-          marginBottom: '1.25rem',
-          padding: '1rem',
-        }}
-      >
-        <div
-          style={{
-            alignItems: 'center',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '0.75rem',
-            justifyContent: 'space-between',
-            marginBottom: '0.75rem',
-          }}
-        >
-          <div>
-            <p style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, margin: 0, textTransform: 'uppercase' }}>
-              Command center
-            </p>
-            <h2 id="operational-readiness-heading" style={{ fontSize: '1.2rem', margin: '0.15rem 0 0' }}>
-              Operational readiness
-            </h2>
-          </div>
-          <span
+            aria-label="Training KPI strip"
             style={{
-              ...chipStyle,
-              background:
-                inviteExceptions.length || unassignedCohortLearners.length || unassignedPathLearners.length || trackExceptions.length
-                  ? '#fff7ed'
-                  : '#ecfdf3',
+              display: 'grid',
+              gap: '0.75rem',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              marginBottom: '1.25rem',
             }}
           >
-            {inviteExceptions.length || unassignedCohortLearners.length || unassignedPathLearners.length || trackExceptions.length
-              ? 'Exceptions need review'
-              : 'No readiness exceptions'}
-          </span>
-        </div>
+            {kpiItems.map(([label, value]) => (
+              <div
+                aria-label={`${label} KPI`}
+                key={label}
+                style={{ border: '1px solid #d8dee7', borderRadius: 8, padding: '0.8rem' }}
+              >
+                <div style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, textTransform: 'uppercase' }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
+            {(dashboard
+              ? ['Postgres-backed data', 'Role-gated admin API', 'CSV export endpoint']
+              : ['CSV import/export', 'LMS verified/exported status', 'No ADP writeback']
+            ).map((boundary) => (
+              <span key={boundary} style={{ ...chipStyle, background: '#eef4ff', color: '#27446d' }}>
+                {boundary}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {showOverview ? (
+        <section
+          aria-labelledby="operational-readiness-heading"
+          style={{
+            border: '1px solid #d8dee7',
+            borderRadius: 8,
+            marginBottom: '1.25rem',
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              alignItems: 'center',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              justifyContent: 'space-between',
+              marginBottom: '0.75rem',
+            }}
+          >
+            <div>
+              <p style={{ color: '#657184', fontSize: '0.76rem', fontWeight: 800, margin: 0, textTransform: 'uppercase' }}>
+                Command center
+              </p>
+              <h2 id="operational-readiness-heading" style={{ fontSize: '1.2rem', margin: '0.15rem 0 0' }}>
+                Operational readiness
+              </h2>
+            </div>
+            <span
+              style={{
+                ...chipStyle,
+                background:
+                  inviteExceptions.length || unassignedCohortLearners.length || unassignedPathLearners.length || trackExceptions.length
+                    ? '#fff7ed'
+                    : '#ecfdf3',
+              }}
+            >
+              {inviteExceptions.length || unassignedCohortLearners.length || unassignedPathLearners.length || trackExceptions.length
+                ? 'Exceptions need review'
+                : 'No readiness exceptions'}
+            </span>
+          </div>
 
         <div
           aria-label="Operational exception summary"
@@ -393,9 +418,10 @@ export function AdminDashboard({
             Dashboard readiness data is not loaded yet. Learner roster exceptions will appear when learners are available.
           </p>
         )}
-      </section>
+        </section>
+      ) : null}
 
-      {onDownloadExport ? (
+      {showOverview && onDownloadExport ? (
         <section aria-label="Admin exports" style={{ marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button onClick={() => void handleDownloadExport('clearance')} type="button">
@@ -409,7 +435,7 @@ export function AdminDashboard({
         </section>
       ) : null}
 
-      {auditEvents.length ? (
+      {showOverview && auditEvents.length ? (
         <section
           aria-labelledby="admin-audit-heading"
           style={{ border: '1px solid #d8dee7', borderRadius: 8, marginBottom: '1.25rem', padding: '1rem' }}
@@ -454,7 +480,7 @@ export function AdminDashboard({
         </section>
       ) : null}
 
-      {dashboard ? (
+      {showOverview && dashboard ? (
         <section aria-label="Cohort readiness" style={{ marginBottom: '1.25rem' }}>
           <h2 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>Cohorts</h2>
           <div className="admin-table-wrap">
@@ -483,7 +509,7 @@ export function AdminDashboard({
         </section>
       ) : null}
 
-      {(onCreateLearner || onCreateCohort || learners.length || managementCohorts.length) ? (
+      {(showUsers && (onCreateLearner || learners.length)) || (showCohorts && (onCreateCohort || managementCohorts.length)) ? (
         <section
           aria-label="Admin learner and cohort management"
           style={{
@@ -493,9 +519,11 @@ export function AdminDashboard({
             padding: '1rem',
           }}
         >
-          <h2 style={{ fontSize: '1.2rem', margin: '0 0 0.75rem' }}>Learner and cohort management</h2>
+          <h2 style={{ fontSize: '1.2rem', margin: '0 0 0.75rem' }}>
+            {showUsers ? 'Learner management' : 'Cohort management'}
+          </h2>
           <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-            {onCreateLearner ? (
+            {showUsers && onCreateLearner ? (
               <form aria-label="Create learner" onSubmit={handleLearnerSubmit}>
                 <h3 style={{ fontSize: '1rem', margin: '0 0 0.75rem' }}>Add learner</h3>
                 <div style={{ display: 'grid', gap: '0.65rem' }}>
@@ -551,7 +579,7 @@ export function AdminDashboard({
               </form>
             ) : null}
 
-            {onCreateCohort ? (
+            {showCohorts && onCreateCohort ? (
               <form aria-label="Create cohort" onSubmit={handleCohortSubmit}>
                 <h3 style={{ fontSize: '1rem', margin: '0 0 0.75rem' }}>Add cohort</h3>
                 <div style={{ display: 'grid', gap: '0.65rem' }}>
@@ -613,7 +641,50 @@ export function AdminDashboard({
             ) : null}
           </div>
 
-          {learners.length ? (
+          {showCohorts ? (
+            <div style={{ marginTop: '1rem' }}>
+              <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Managed cohorts</h3>
+              {managementCohorts.length ? (
+                <div className="admin-table-wrap">
+                  <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                    <thead>
+                      <tr>
+                        {['Cohort', 'Region', 'Starts', 'Learners', 'Paths', 'Facilitators'].map((heading) => (
+                          <th key={heading} style={{ borderBottom: '1px solid #cbd5e1', padding: '0.6rem' }}>
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {managementCohorts.map((item) => (
+                        <tr key={item.id}>
+                          <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{item.name}</td>
+                          <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{item.region}</td>
+                          <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                            {formatDateTime(item.startsAt)}
+                          </td>
+                          <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{item.learnerCount}</td>
+                          <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                            {item.pathIds.join(', ') || 'None'}
+                          </td>
+                          <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                            {item.facilitatorIds.join(', ') || 'None'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ color: '#657184', margin: '1rem 0 0' }}>
+                  No managed cohorts are available yet. Add a cohort to begin assignments.
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {showUsers && learners.length ? (
             <div style={{ marginTop: '1rem' }}>
               <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Managed learners</h3>
               <div
@@ -740,15 +811,15 @@ export function AdminDashboard({
               ) : null}
               {inviteError ? <p role="alert">{inviteError}</p> : null}
             </div>
-          ) : (
+          ) : showUsers ? (
             <p style={{ color: '#657184', margin: '1rem 0 0' }}>
               No managed learners are available yet. Add a learner to start issuing invites.
             </p>
-          )}
+          ) : null}
         </section>
       ) : null}
 
-      {participants.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+      {showOverview && participants.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
         <label>
           Region
           <select
@@ -799,7 +870,7 @@ export function AdminDashboard({
         </label>
       </div> : null}
 
-      {participants.length ? <div className="admin-table-wrap"><table style={{ borderCollapse: 'collapse', width: '100%' }}>
+      {showOverview && participants.length ? <div className="admin-table-wrap"><table style={{ borderCollapse: 'collapse', width: '100%' }}>
         <thead>
           <tr>
             {['Participant', 'Region', 'Cohort', 'Role', 'Status', 'Attendance', 'LMS'].map((heading) => (
@@ -834,10 +905,10 @@ export function AdminDashboard({
           ))}
         </tbody>
       </table></div> : null}
-      {participants.length && !filteredParticipants.length ? (
+      {showOverview && participants.length && !filteredParticipants.length ? (
         <p style={{ color: '#657184', margin: '0.75rem 0 0' }}>No participant records match the current filters.</p>
       ) : null}
-      {!participants.length && !dashboard && !learners.length ? (
+      {showOverview && !participants.length && !dashboard && !learners.length ? (
         <section
           aria-label="Admin dashboard empty state"
           style={{ border: '1px solid #d8dee7', borderRadius: 8, marginTop: '1.25rem', padding: '1rem' }}
@@ -903,6 +974,12 @@ function countLearnersByInviteStatus(learners: AdminLearner[], status: AdminLear
 function formatInviteStatus(status: AdminLearner['inviteStatus'] | LearnerInvite['inviteStatus'] | undefined) {
   if (!status || status === 'not_invited' || status === 'not_sent') return 'Not invited'
   return status.replace(/_/g, ' ').replace(/^\w/, (first) => first.toUpperCase())
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not scheduled'
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function toIsoFromLocalInput(value: string) {

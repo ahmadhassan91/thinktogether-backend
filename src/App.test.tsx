@@ -133,7 +133,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
   })
 
-  it('switches between learner, coach, admin, and plan views', async () => {
+  it('switches between learner, coach, admin, users, cohorts, deck, and plan views', async () => {
     render(<App />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Practice' }))
@@ -142,11 +142,20 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Admin' }))
     expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
-    expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Users' }))
+    expect(screen.getByRole('heading', { name: 'Learners and Invites' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cohorts' }))
+    expect(screen.getByRole('heading', { name: 'Cohorts and Assignments' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decks' }))
     expect(await screen.findByRole('heading', { name: 'Training Deck Studio' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Generate preview' }))
     expect(await screen.findByRole('heading', { name: 'Effective Lesson Delivery' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
+    expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Training Deck Studio' })).not.toBeInTheDocument()
   })
 
   it('uses learner profile from getMe and skips admin calls for learner users', async () => {
