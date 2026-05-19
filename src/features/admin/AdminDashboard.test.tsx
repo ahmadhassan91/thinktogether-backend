@@ -106,6 +106,7 @@ describe('AdminDashboard', () => {
 
     render(
       <AdminDashboard
+        mode="users"
         managementCohorts={[
           {
             id: 'cohort-1',
@@ -137,7 +138,6 @@ describe('AdminDashboard', () => {
     )
 
     expect(screen.getByRole('form', { name: 'Create learner' })).toBeInTheDocument()
-    expect(screen.getByRole('form', { name: 'Create cohort' })).toBeInTheDocument()
     expect(screen.getByRole('row', { name: /Mina Patel/i })).toHaveTextContent('PIT May 2026')
     expect(screen.getByRole('row', { name: /Mina Patel/i })).toHaveTextContent('Not invited')
 
@@ -155,6 +155,35 @@ describe('AdminDashboard', () => {
       assignedPathIds: ['program-induction-pbis'],
     })
 
+    fireEvent.click(screen.getByRole('button', { name: 'Generate invite' }))
+    expect(onCreateLearnerInvite).toHaveBeenCalledWith('learner-1')
+    expect(await screen.findByText('Invite ready')).toBeInTheDocument()
+    expect(screen.getByText('http://localhost:5173/?invite=invite-token-1')).toBeInTheDocument()
+  })
+
+  it('renders cohort management from the dedicated cohorts view', () => {
+    const onCreateCohort = vi.fn()
+
+    render(
+      <AdminDashboard
+        mode="cohorts"
+        managementCohorts={[
+          {
+            id: 'cohort-1',
+            name: 'PIT May 2026',
+            region: 'East',
+            startsAt: '2026-05-14T09:00:00.000Z',
+            facilitatorIds: ['facilitator-1'],
+            pathIds: ['program-induction-pbis'],
+            learnerCount: 3,
+          },
+        ]}
+        onCreateCohort={onCreateCohort}
+      />,
+    )
+
+    expect(screen.getByRole('form', { name: 'Create cohort' })).toBeInTheDocument()
+
     fireEvent.change(screen.getByLabelText('Cohort name'), { target: { value: 'NHO June 2026' } })
     fireEvent.change(screen.getByLabelText('Cohort region'), { target: { value: 'Central' } })
     fireEvent.change(screen.getByLabelText('Cohort facilitator IDs'), { target: { value: 'facilitator-2' } })
@@ -169,10 +198,5 @@ describe('AdminDashboard', () => {
       facilitatorIds: ['facilitator-2'],
       pathIds: ['program-induction-pbis'],
     })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Generate invite' }))
-    expect(onCreateLearnerInvite).toHaveBeenCalledWith('learner-1')
-    expect(await screen.findByText('Invite ready')).toBeInTheDocument()
-    expect(screen.getByText('http://localhost:5173/?invite=invite-token-1')).toBeInTheDocument()
   })
 })

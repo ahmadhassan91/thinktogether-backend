@@ -660,7 +660,7 @@ function DeckStudio() {
   return (
     <main className="deck-page" aria-labelledby="deck-studio-title">
       <section className="deck-studio">
-        <div>
+        <div className="deck-studio__hero">
           <p className="app-hero__label">AI deck generator</p>
           <h1 id="deck-studio-title">Training Deck Studio</h1>
           <p>
@@ -669,55 +669,70 @@ function DeckStudio() {
           </p>
         </div>
 
-        <div className="provider-strip" aria-label="AI provider status">
-          {deckProviders.map((item) => (
-            <span data-configured={item.configured} key={item.id} title={item.note}>
-              {item.label}: {item.configured ? 'ready' : 'needs key'}
-            </span>
-          ))}
-        </div>
+        <div className="deck-studio__workspace">
+          <div className="deck-studio__controls">
+            <div className="provider-strip" aria-label="AI provider status">
+              {deckProviders.map((item) => (
+                <span data-configured={item.configured} key={item.id} title={item.note}>
+                  {item.label}: {item.configured ? 'ready' : 'needs key'}
+                </span>
+              ))}
+            </div>
 
-        <form className="deck-form" onSubmit={handleGenerateDeck}>
-          <label>
-            Provider
-            <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
-              <option value="openai">OpenAI GPT-5.2</option>
-              <option value="gemini">Gemini Flash</option>
-              <option value="claude">Claude Sonnet</option>
-            </select>
-          </label>
-          <label>
-            Topic
-            <input value={topic} onChange={(event) => setTopic(event.target.value)} />
-          </label>
-          <label>
-            Audience
-            <input value={audience} onChange={(event) => setAudience(event.target.value)} />
-          </label>
-          <div className="deck-form__row">
-            <label>
-              Minutes
-              <input min={10} max={180} type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
-            </label>
-            <label>
-              Slides
-              <input min={4} max={14} type="number" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
-            </label>
+            <form className="deck-form" onSubmit={handleGenerateDeck}>
+              <label>
+                Provider
+                <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
+                  <option value="openai">OpenAI GPT-5.2</option>
+                  <option value="gemini">Gemini Flash</option>
+                  <option value="claude">Claude Sonnet</option>
+                </select>
+              </label>
+              <label>
+                Topic
+                <input value={topic} onChange={(event) => setTopic(event.target.value)} />
+              </label>
+              <label>
+                Audience
+                <input value={audience} onChange={(event) => setAudience(event.target.value)} />
+              </label>
+              <div className="deck-form__row">
+                <label>
+                  Minutes
+                  <input min={10} max={180} type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
+                </label>
+                <label>
+                  Slides
+                  <input min={4} max={14} type="number" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
+                </label>
+              </div>
+              <div className="deck-form__actions">
+                <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
+                  {isGenerating ? 'Generating preview' : 'Generate preview'}
+                </button>
+                <button
+                  disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
+                  onClick={handleDownloadPptx}
+                  type="button"
+                >
+                  {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
+                </button>
+              </div>
+              {deckError ? <p role="alert">{deckError}</p> : null}
+            </form>
           </div>
-          <div className="deck-form__actions">
-            <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
-              {isGenerating ? 'Generating preview' : 'Generate preview'}
-            </button>
-            <button
-              disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
-              onClick={handleDownloadPptx}
-              type="button"
-            >
-              {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
-            </button>
-          </div>
-          {deckError ? <p role="alert">{deckError}</p> : null}
-        </form>
+
+          <aside className="deck-studio__quality" aria-label="Deck quality system">
+            <p className="app-hero__label">Output standard</p>
+            <h2>Facilitator-ready, editable PowerPoint</h2>
+            <div className="deck-studio__proof">
+              <span>Source-linked evidence strip</span>
+              <span>PBIS/SOP artifact grounding</span>
+              <span>Editable infographic shapes</span>
+              <span>Human review gate</span>
+            </div>
+          </aside>
+        </div>
 
         {outline ? (
           <section className="deck-outline" aria-labelledby="deck-outline-title">
@@ -731,12 +746,13 @@ function DeckStudio() {
               <span>{outline.sourceArtifacts.length} source artifacts</span>
               <span>Human review required</span>
             </div>
-            <ol>
+            <ol className="deck-outline__cards">
               {outline.slides.map((slide, index) => (
-                <li key={`${slide.title}-${index}`}>
+                <li data-layout={slide.layout} key={`${slide.title}-${index}`}>
+                  <small>{slide.layout}</small>
                   <strong>{index + 1}. {slide.title}</strong>
                   <span>{slide.objective}</span>
-                  <small>{slide.activityPrompt}</small>
+                  <em>{slide.activityPrompt}</em>
                 </li>
               ))}
             </ol>
