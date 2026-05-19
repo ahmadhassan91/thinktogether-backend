@@ -183,7 +183,7 @@ describe('admin management client', () => {
     storeToken('admin-token')
     fetchMock
       .mockResolvedValueOnce(json({
-        providers: [{ id: 'openai', label: 'OpenAI GPT-5.2', configured: true, mode: 'sync', note: 'Premium planner' }],
+        providers: [{ id: 'openai', label: 'OpenAI GPT-5.5', configured: true, mode: 'sync', note: 'Premium planner' }],
       }))
       .mockResolvedValueOnce(json({
         job: { id: 'outline-job-1', status: 'running' },
@@ -191,7 +191,7 @@ describe('admin management client', () => {
       .mockResolvedValueOnce(json({
         job: { id: 'outline-job-1', status: 'ready' },
         outline: { title: 'PBIS Refresher', provider: 'openai', slides: [] },
-        provider: { id: 'openai', label: 'OpenAI GPT-5.2', configured: true, mode: 'sync', note: 'Premium planner' },
+        provider: { id: 'openai', label: 'OpenAI GPT-5.5', configured: true, mode: 'sync', note: 'Premium planner' },
       }))
       .mockResolvedValueOnce(json({
         job: { id: 'deck-job-1', status: 'ready' },
