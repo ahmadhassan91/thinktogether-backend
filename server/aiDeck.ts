@@ -66,10 +66,10 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
     },
     {
       id: 'openai',
-      label: 'OpenAI GPT-5.2',
+      label: 'OpenAI GPT-5.5',
       configured: Boolean(env.OPENAI_API_KEY),
       mode: 'sync',
-      note: 'Premium structured deck planner for professional PPTX exports.',
+      note: 'Premium structured deck planner for professional infographic PPTX exports.',
     },
     {
       id: 'claude',
@@ -157,7 +157,11 @@ Rules:
 - Avoid generic training filler; each slide needs a clear claim, a proof point, and a concrete activity.
 - Choose varied slide layouts: process for routines, matrix for comparisons, scenario for situational practice, commitment for transfer/next steps.
 - At least half the slides must include an infographic-friendly visualSpec: loop for 10:2 rhythm, pyramid for PBIS tiers, timeline for training sequence, scorecard for readiness or checks.
-- visualSpec.stages must be concise enough for editable PowerPoint shapes, not paragraphs.
+- Treat visualSpec as an art-direction storyboard, not a content summary. It should describe the infographic object the renderer will build.
+- Avoid basic text-only slide plans. Every slide needs one dominant visual object: cycle, ladder, timeline, tier stack, readiness scorecard, decision matrix, or transfer map.
+- visualSpec.headline must be a short visual claim, not a restatement of the slide title.
+- visualSpec.stages must be concise enough for editable PowerPoint shapes, not paragraphs, and each stage should pair a staff action with observable evidence.
+- visualSpec.callout should be a metric, facilitation cue, or review checkpoint that deserves a designed badge.
 - Talking points should be short labels or evidence statements that can become infographic cards.
 - Return exactly ${request.slideCount} slides.
 - Return JSON only, no markdown.`;
@@ -198,10 +202,10 @@ async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): 
   const result = await postJson(
     'https://api.openai.com/v1/responses',
     {
-      model: process.env.OPENAI_DECK_MODEL || 'gpt-5.2',
-      instructions: 'You are a senior learning designer and presentation strategist. Return compact valid JSON only. No markdown.',
+      model: process.env.OPENAI_DECK_MODEL || 'gpt-5.5',
+      instructions: 'You are a senior learning designer, presentation strategist, and infographic art director. Return compact valid JSON only. No markdown.',
       input: prompt,
-      max_output_tokens: 4096,
+      max_output_tokens: 6144,
       text: {
         format: {
           type: 'json_object',
@@ -219,7 +223,7 @@ async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): 
       .flatMap((item) => asJsonArray(asJsonRecord(item).content))
       .map((part) => getString(asJsonRecord(part).text))
       .join('');
-  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'gpt-5.2'));
+  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'gpt-5.5'));
 }
 
 async function generateWithClaude(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
