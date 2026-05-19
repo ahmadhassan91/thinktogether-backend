@@ -66,7 +66,7 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
     },
     {
       id: 'openai',
-      label: 'OpenAI GPT-5.5',
+      label: 'OpenAI GPT-5.2',
       configured: Boolean(env.OPENAI_API_KEY),
       mode: 'sync',
       note: 'Premium structured deck planner for professional infographic PPTX exports.',
@@ -202,7 +202,7 @@ async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): 
   const result = await postJson(
     'https://api.openai.com/v1/responses',
     {
-      model: process.env.OPENAI_DECK_MODEL || 'gpt-5.5',
+      model: process.env.OPENAI_DECK_MODEL || 'gpt-5.2',
       instructions: 'You are a senior learning designer, presentation strategist, and infographic art director. Return compact valid JSON only. No markdown.',
       input: prompt,
       max_output_tokens: 6144,
@@ -223,7 +223,7 @@ async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): 
       .flatMap((item) => asJsonArray(asJsonRecord(item).content))
       .map((part) => getString(asJsonRecord(part).text))
       .join('');
-  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'gpt-5.5'));
+  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'gpt-5.2'));
 }
 
 async function generateWithClaude(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {

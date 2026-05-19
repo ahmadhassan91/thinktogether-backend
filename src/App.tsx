@@ -665,7 +665,7 @@ function DeckStudio() {
           <h1 id="deck-studio-title">Training Deck Studio</h1>
           <p>
             Generate a source-grounded facilitator deck and export an editable PowerPoint using the PBIS and SOP artifacts.
-            OpenAI GPT-5.5 is the premium default; Gemini remains available as the fast fallback.
+            OpenAI GPT-5.2 is the premium default; Gemini remains available as the fast fallback.
           </p>
         </div>
 
@@ -683,7 +683,7 @@ function DeckStudio() {
               <label>
                 Provider
                 <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
-                  <option value="openai">OpenAI GPT-5.5</option>
+                  <option value="openai">OpenAI GPT-5.2</option>
                   <option value="gemini">Gemini Flash</option>
                   <option value="claude">Claude Sonnet</option>
                 </select>
