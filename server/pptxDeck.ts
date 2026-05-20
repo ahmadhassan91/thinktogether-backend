@@ -13,6 +13,9 @@ const COLORS = {
   redOrange: 'D94B28',
   teal: '48C0B0',
   darkTeal: '1A8A80',
+  deep: '18313B',
+  deep2: '213C48',
+  glow: 'B9F3EA',
   green: '709848',
   softTeal: 'E4F6F3',
   softYellow: 'FFF5E7',
@@ -25,11 +28,6 @@ const COLORS = {
   hairline: 'ECE6DB',
   white: 'FFFFFF',
 };
-
-const SHADOW = {
-  soft: { type: 'outer', color: '8A8178', opacity: 0.12, blur: 1, angle: 45, distance: 1 },
-  lift: { type: 'outer', color: '8A8178', opacity: 0.18, blur: 1.4, angle: 45, distance: 1.2 },
-} as const;
 
 const SHAPE = {
   rect: 'rect',
@@ -185,16 +183,16 @@ function addTitleSlide(pptx: pptxgen, outline: DeckOutline) {
 
 function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSlide, index: number) {
   const slide = pptx.addSlide();
-  addBackground(slide);
-  addTopBar(slide, index + 1, outline.slides.length);
+  addTrainingBackground(slide, index);
+  addTopBar(slide, index + 1, outline.slides.length, true);
   const visualType = resolveVisualType(slideData);
-  addSlideRhythmMark(slide, visualType, index);
+  addSlideRhythmMark(slide, visualType);
   slide.addText(slideData.title, {
     x: MARGIN_X,
     y: 0.82,
     w: 7.75,
     h: 0.62,
-    color: COLORS.charcoal,
+    color: COLORS.white,
     fontFace: 'Aptos Display',
     fontSize: scaledFont(slideData.title, { base: 22.5, medium: 20.5, small: 18.5, mediumAt: 58, smallAt: 82 }),
     bold: true,
@@ -207,7 +205,7 @@ function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSl
     y: 1.52,
     w: 7.55,
     h: 0.34,
-    color: COLORS.darkTeal,
+    color: COLORS.glow,
     fontSize: scaledFont(slideData.objective, { base: 10.8, medium: 9.8, small: 8.8, mediumAt: 92, smallAt: 128 }),
     bold: true,
     margin: 0,
@@ -238,22 +236,48 @@ function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSl
 
 function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   const stages = visualStages(slideData, 4);
-  addVisualPanel(slide, { x: 0.58, y: 1.96, w: 6.22, h: 4.18 }, COLORS.white);
-  addSectionLabel(slide, '10:2 practice loop', { x: 0.78, y: 2.12, w: 3.2, h: 0.3 }, COLORS.orange);
+  addDarkStage(slide, { x: 0.58, y: 1.96, w: 6.22, h: 4.18 });
+  addSectionLabel(slide, '10:2 practice loop', { x: 0.78, y: 2.12, w: 3.2, h: 0.3 }, COLORS.glow);
   addMicroCaption(slide, 'Teach briefly. Practice immediately. Repeat.', { x: 3.88, y: 2.12, w: 2.45, h: 0.22 });
-  const ring = { x: 2.28, y: 2.42, w: 2.56, h: 2.56 };
-  [
-    { range: [305, 35] as [number, number], color: COLORS.orange },
-    { range: [35, 125] as [number, number], color: COLORS.teal },
-    { range: [125, 215] as [number, number], color: COLORS.green },
-    { range: [215, 305] as [number, number], color: COLORS.yellow },
-  ].forEach((arc) => {
-    slide.addShape('blockArc', {
-      ...ring,
-      angleRange: arc.range,
-      arcThicknessRatio: 0.16,
-      fill: { color: arc.color, transparency: 12 },
-      line: { color: arc.color, transparency: 100 },
+  const ring = { x: 2.18, y: 2.36, w: 2.76, h: 2.76 };
+  slide.addShape('ellipse', {
+    ...ring,
+    fill: { color: COLORS.deep2, transparency: 24 },
+    line: { color: COLORS.glow, width: 1.6, transparency: 12 },
+  });
+  slide.addShape('ellipse', {
+    x: ring.x + 0.18,
+    y: ring.y + 0.18,
+    w: ring.w - 0.36,
+    h: ring.h - 0.36,
+    fill: { color: COLORS.deep, transparency: 100 },
+    line: { color: COLORS.teal, width: 0.8, transparency: 45 },
+  });
+  const orbitMarks = [
+    { x: 3.33, y: 2.18, color: COLORS.orange },
+    { x: 4.76, y: 3.5, color: COLORS.teal },
+    { x: 3.33, y: 4.9, color: COLORS.green },
+    { x: 1.9, y: 3.5, color: COLORS.yellow },
+  ];
+  orbitMarks.forEach((mark, index) => {
+    slide.addShape('ellipse', {
+      x: mark.x,
+      y: mark.y,
+      w: 0.34,
+      h: 0.34,
+      fill: { color: mark.color },
+      line: { color: COLORS.white, transparency: 30 },
+    });
+    slide.addText(String(index + 1), {
+      x: mark.x,
+      y: mark.y + 0.09,
+      w: 0.34,
+      h: 0.1,
+      color: COLORS.white,
+      fontSize: 6.4,
+      bold: true,
+      align: 'center',
+      margin: 0,
     });
   });
   slide.addShape('ellipse', {
@@ -261,9 +285,8 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     y: 2.78,
     w: 1.84,
     h: 1.84,
-    fill: { color: COLORS.cream },
-    line: { color: COLORS.teal, width: 1.2, transparency: 8 },
-    shadow: SHADOW.soft,
+    fill: { color: COLORS.deep2 },
+    line: { color: COLORS.glow, width: 1.2, transparency: 12 },
   });
   slide.addText('10:2', {
     x: 2.88,
@@ -282,7 +305,7 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     y: 3.5,
     w: 1.36,
     h: 0.18,
-    color: COLORS.darkTeal,
+    color: COLORS.glow,
     fontSize: 7.8,
     bold: true,
     align: 'center',
@@ -305,9 +328,8 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
       w: 1.2,
       h: 1.0,
       rectRadius: 0.08,
-      fill: { color: index % 2 === 0 ? COLORS.white : COLORS.softYellow },
-      line: { color: node.accent, transparency: 10 },
-      shadow: SHADOW.soft,
+      fill: { color: COLORS.deep2, transparency: 4 },
+      line: { color: node.accent, transparency: 8 },
     });
     addNumberBadge(slide, String(index + 1), { x: node.x + 0.1, y: node.y + 0.12, w: 0.28, h: 0.28 }, node.accent);
     slide.addText(stage.label, {
@@ -315,7 +337,7 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
       y: node.y + 0.52,
       w: 0.9,
       h: 0.28,
-      color: COLORS.ink,
+      color: COLORS.white,
       fontSize: scaledFont(stage.label, { base: 8.4, medium: 7.5, small: 6.7, mediumAt: 20, smallAt: 30 }),
       bold: true,
       align: 'center',
@@ -328,7 +350,7 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
         y: node.y + 0.84,
         w: 0.88,
         h: 0.18,
-        color: COLORS.muted,
+        color: COLORS.glow,
         fontSize: 5.8,
         align: 'center',
         fit: 'shrink',
@@ -343,39 +365,39 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
 
 function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   const stages = visualStages(slideData, 3);
-  addVisualPanel(slide, { x: 0.58, y: 1.96, w: 6.22, h: 4.12 }, COLORS.softGreen);
-  addSectionLabel(slide, 'PBIS tier pyramid', { x: 0.78, y: 2.12, w: 3.0, h: 0.3 }, COLORS.green);
-  slide.addText('80%', {
-    x: 4.82,
-    y: 4.72,
-    w: 1.2,
-    h: 0.52,
-    color: COLORS.teal,
-    fontFace: 'Aptos Display',
-    fontSize: 32,
+  addDarkStage(slide, { x: 0.58, y: 1.96, w: 6.22, h: 4.12 });
+  addSectionLabel(slide, 'PBIS tier pyramid', { x: 0.78, y: 2.12, w: 3.0, h: 0.3 }, COLORS.glow);
+  slide.addText('UNIVERSAL', {
+    x: 4.86,
+    y: 5.24,
+    w: 1.22,
+    h: 0.18,
+    color: COLORS.glow,
+    fontSize: 7,
     bold: true,
-    transparency: 12,
+    align: 'right',
     margin: 0,
+    fit: 'shrink',
   });
   const bands = [
-    { x: 2.36, y: 2.48, w: 1.92, h: 0.66, color: COLORS.orange, label: 'Tier 3', pct: '5%', fill: COLORS.softOrange },
-    { x: 1.58, y: 3.28, w: 3.46, h: 0.72, color: COLORS.yellow, label: 'Tier 2', pct: '15%', fill: COLORS.softYellow },
-    { x: 0.8, y: 4.2, w: 5.02, h: 0.86, color: COLORS.teal, label: 'Tier 1', pct: '80%', fill: COLORS.softTeal },
+    { x: 2.54, y: 2.62, w: 1.62, h: 0.42, depth: 0.22, color: COLORS.orange, label: 'Tier 3', pct: '5%', fill: '5B3741' },
+    { x: 1.78, y: 3.42, w: 3.14, h: 0.46, depth: 0.26, color: COLORS.yellow, label: 'Tier 2', pct: '15%', fill: '5C4B34' },
+    { x: 0.92, y: 4.32, w: 4.9, h: 0.52, depth: 0.32, color: COLORS.teal, label: 'Tier 1', pct: '80%', fill: '214E50' },
   ];
   bands.forEach((band, index) => {
     const stage = stages[index] ?? stages[stages.length - 1];
-    slide.addShape('trapezoid', {
+    addStepBlock(slide, {
       x: band.x,
       y: band.y,
       w: band.w,
       h: band.h,
-      fill: { color: band.fill },
-      line: { color: band.color, width: 1.2 },
-      shadow: index === 2 ? SHADOW.lift : SHADOW.soft,
+      depth: band.depth,
+      fill: band.fill,
+      accent: band.color,
     });
     slide.addText(band.label, {
       x: band.x + 0.18,
-      y: band.y + 0.18,
+      y: band.y + 0.13,
       w: 0.72,
       h: 0.18,
       color: band.color,
@@ -385,7 +407,7 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     });
     slide.addText(band.pct, {
       x: band.x + band.w - 0.55,
-      y: band.y + 0.14,
+      y: band.y + 0.12,
       w: 0.36,
       h: 0.18,
       color: band.color,
@@ -396,10 +418,10 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     });
     slide.addText(stage.label, {
       x: band.x + 0.92,
-      y: band.y + 0.16,
+      y: band.y + 0.12,
       w: band.w - 1.34,
       h: 0.22,
-      color: COLORS.ink,
+      color: COLORS.white,
       fontSize: scaledFont(stage.label, { base: 9.6, medium: 8.6, small: 7.6, mediumAt: 32, smallAt: 44 }),
       bold: true,
       align: 'center',
@@ -409,10 +431,10 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     if (stage.detail) {
       slide.addText(compact(stage.detail, 58), {
         x: band.x + 0.92,
-        y: band.y + 0.45,
+        y: band.y + 0.34,
         w: band.w - 1.34,
         h: 0.18,
-        color: COLORS.muted,
+        color: COLORS.glow,
         fontSize: 6.1,
         align: 'center',
         fit: 'shrink',
@@ -999,6 +1021,111 @@ function addBackground(slide: pptxgen.Slide) {
   });
 }
 
+function addTrainingBackground(slide: pptxgen.Slide, index: number) {
+  slide.background = { color: COLORS.deep };
+  slide.addShape(SHAPE.rect, {
+    x: 0,
+    y: 0,
+    w: SLIDE_W,
+    h: SLIDE_H,
+    fill: { color: index % 2 === 0 ? COLORS.deep : '1D3540' },
+    line: { color: index % 2 === 0 ? COLORS.deep : '1D3540' },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 0,
+    y: 0,
+    w: SLIDE_W,
+    h: 0.08,
+    fill: { color: COLORS.orange },
+    line: { color: COLORS.orange },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 8.35,
+    y: 0.08,
+    w: 4.98,
+    h: SLIDE_H,
+    fill: { color: COLORS.cream, transparency: 6 },
+    line: { color: COLORS.cream, transparency: 100 },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 12.8,
+    y: 0.08,
+    w: 0.1,
+    h: 6.64,
+    fill: { color: COLORS.teal },
+    line: { color: COLORS.teal },
+  });
+  for (let i = 0; i < 6; i += 1) {
+    slide.addShape(SHAPE.line, {
+      x: 0.65 + i * 0.92,
+      y: 1.86,
+      w: 0,
+      h: 4.46,
+      line: { color: COLORS.white, transparency: 92, width: 0.45 },
+    });
+  }
+  for (let i = 0; i < 4; i += 1) {
+    slide.addShape(SHAPE.line, {
+      x: 0.58,
+      y: 2.18 + i * 0.82,
+      w: 6.22,
+      h: 0,
+      line: { color: COLORS.white, transparency: 94, width: 0.45 },
+    });
+  }
+}
+
+function addDarkStage(slide: pptxgen.Slide, box: Box) {
+  slide.addShape(SHAPE.roundRect, {
+    ...box,
+    rectRadius: 0.04,
+    fill: { color: COLORS.deep2, transparency: 2 },
+    line: { color: COLORS.glow, transparency: 70 },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
+    fill: { color: COLORS.white, transparency: 100 },
+    line: { color: COLORS.white, transparency: 100 },
+  });
+}
+
+function addStepBlock(slide: pptxgen.Slide, block: Box & { depth: number; fill: string; accent: string }) {
+  slide.addShape(SHAPE.rect, {
+    x: block.x + 0.16,
+    y: block.y + block.h,
+    w: block.w,
+    h: block.depth,
+    fill: { color: block.accent, transparency: 38 },
+    line: { color: block.accent, transparency: 45 },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: block.x,
+    y: block.y,
+    w: block.w,
+    h: block.h,
+    fill: { color: block.fill },
+    line: { color: block.accent, width: 1.2 },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: block.x + block.w - 0.04,
+    y: block.y + 0.04,
+    w: 0.18,
+    h: block.h + block.depth - 0.03,
+    fill: { color: block.accent, transparency: 62 },
+    line: { color: block.accent, transparency: 100 },
+  });
+  slide.addShape(SHAPE.line, {
+    x: block.x + 0.06,
+    y: block.y + 0.08,
+    w: block.w - 0.12,
+    h: 0,
+    line: { color: COLORS.white, transparency: 55, width: 0.6 },
+  });
+}
+
 function addBrandLogo(slide: pptxgen.Slide, x: number, y: number, width: number) {
   if (existsSync(LOGO_PATH)) {
     slide.addImage({
@@ -1040,19 +1167,8 @@ function addBrandFallback(slide: pptxgen.Slide, x: number, y: number, size: numb
 function addSlideRhythmMark(
   slide: pptxgen.Slide,
   visualType: NonNullable<DeckSlide['visualSpec']>['type'],
-  index: number,
 ) {
-  const palette = [COLORS.orange, COLORS.teal, COLORS.green, COLORS.yellow];
-  const accent = palette[index % palette.length];
   const rhythmLabel = visualType.replace(/-/g, ' ').toUpperCase();
-  slide.addShape(SHAPE.rect, {
-    x: 12.9,
-    y: 0.08,
-    w: 0.12,
-    h: 6.68,
-    fill: { color: accent, transparency: 4 },
-    line: { color: accent, transparency: 100 },
-  });
   slide.addText(rhythmLabel, {
     x: 9.18,
     y: 0.78,
@@ -1073,8 +1189,8 @@ function addSlideClaim(slide: pptxgen.Slide, slideData: DeckSlide) {
     y: 0.98,
     w: 3.28,
     h: 0.62,
-    rectRadius: 0.04,
-    fill: { color: COLORS.white },
+    rectRadius: 0.03,
+    fill: { color: COLORS.white, transparency: 2 },
     line: { color: COLORS.hairline },
   });
   slide.addShape(SHAPE.rect, {
@@ -1104,7 +1220,6 @@ function addVisualPanel(slide: pptxgen.Slide, box: Box, fill: string) {
     rectRadius: 0.06,
     fill: { color: fill, transparency: fill === COLORS.white ? 0 : 18 },
     line: { color: COLORS.hairline },
-    shadow: SHADOW.soft,
   });
   slide.addShape(SHAPE.rect, {
     x: box.x,
@@ -1128,14 +1243,14 @@ function addMicroCaption(slide: pptxgen.Slide, text: string, box: Box) {
   });
 }
 
-function addTopBar(slide: pptxgen.Slide, slideNumber: number, total: number) {
+function addTopBar(slide: pptxgen.Slide, slideNumber: number, total: number, dark = false) {
   addBrandLogo(slide, 0.56, 0.25, 1.0);
   slide.addText('THINK TOGETHER', {
     x: 1.72,
     y: 0.27,
     w: 2.2,
     h: 0.2,
-    color: COLORS.teal,
+    color: dark ? COLORS.glow : COLORS.teal,
     fontSize: 9,
     bold: true,
     margin: 0,
@@ -1145,7 +1260,8 @@ function addTopBar(slide: pptxgen.Slide, slideNumber: number, total: number) {
     y: 0.47,
     w: 3.2,
     h: 0.2,
-    color: COLORS.muted,
+    color: dark ? COLORS.white : COLORS.muted,
+    transparency: dark ? 18 : 0,
     fontSize: 9,
     margin: 0,
   });
@@ -1154,7 +1270,7 @@ function addTopBar(slide: pptxgen.Slide, slideNumber: number, total: number) {
     y: 0.28,
     w: 0.8,
     h: 0.22,
-    color: COLORS.teal,
+    color: dark ? COLORS.teal : COLORS.teal,
     fontSize: 10,
     bold: true,
     align: 'right',
@@ -1222,7 +1338,6 @@ function addActivityCard(slide: pptxgen.Slide, prompt: string, index: number, bo
     rectRadius: 0.05,
     fill: { color: fill, transparency: 6 },
     line: { color: index % 2 === 0 ? 'B7DED8' : 'F3C6A8', transparency: 8 },
-    shadow: SHADOW.soft,
   });
   slide.addShape(SHAPE.rect, {
     x: box.x,
@@ -1292,7 +1407,6 @@ function addFacilitatorNote(slide: pptxgen.Slide, note: string, box: Box = { x: 
     rectRadius: 0.05,
     fill: { color: COLORS.white },
     line: { color: COLORS.hairline },
-    shadow: SHADOW.soft,
   });
   slide.addShape(SHAPE.rect, {
     x: box.x,
