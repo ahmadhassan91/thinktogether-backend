@@ -183,30 +183,28 @@ function addTitleSlide(pptx: pptxgen, outline: DeckOutline) {
 
 function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSlide, index: number) {
   const slide = pptx.addSlide();
-  addTrainingBackground(slide, index);
-  addTopBar(slide, index + 1, outline.slides.length, true);
+  addReadableTrainingBackground(slide, index);
+  addTopBar(slide, index + 1, outline.slides.length);
   const visualType = resolveVisualType(slideData);
-  addSlideRhythmMark(slide, visualType);
   slide.addText(slideData.title, {
-    x: MARGIN_X,
-    y: 0.82,
-    w: 7.75,
-    h: 0.62,
-    color: COLORS.white,
+    x: 0.72,
+    y: 0.9,
+    w: 11.2,
+    h: 0.68,
+    color: COLORS.charcoal,
     fontFace: 'Aptos Display',
-    fontSize: scaledFont(slideData.title, { base: 22.5, medium: 20.5, small: 18.5, mediumAt: 58, smallAt: 82 }),
+    fontSize: scaledFont(slideData.title, { base: 28, medium: 25, small: 22, mediumAt: 58, smallAt: 82 }),
     bold: true,
     margin: 0,
     fit: 'shrink',
   });
-  addSlideClaim(slide, slideData);
   slide.addText(slideData.objective, {
-    x: MARGIN_X,
-    y: 1.52,
-    w: 7.55,
-    h: 0.34,
-    color: COLORS.glow,
-    fontSize: scaledFont(slideData.objective, { base: 10.8, medium: 9.8, small: 8.8, mediumAt: 92, smallAt: 128 }),
+    x: 0.72,
+    y: 1.58,
+    w: 10.9,
+    h: 0.38,
+    color: COLORS.darkTeal,
+    fontSize: scaledFont(slideData.objective, { base: 13.5, medium: 12.2, small: 11.2, mediumAt: 92, smallAt: 128 }),
     bold: true,
     margin: 0,
     fit: 'shrink',
@@ -236,10 +234,9 @@ function addTrainingSlide(pptx: pptxgen, outline: DeckOutline, slideData: DeckSl
 
 function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   const stages = visualStages(slideData, 4);
-  addDarkStage(slide, { x: 0.58, y: 1.96, w: 6.22, h: 4.18 });
-  addSectionLabel(slide, '10:2 practice loop', { x: 0.78, y: 2.12, w: 3.2, h: 0.3 }, COLORS.glow);
-  addMicroCaption(slide, 'Teach briefly. Practice immediately. Repeat.', { x: 3.88, y: 2.12, w: 2.45, h: 0.22 });
-  const ring = { x: 2.18, y: 2.36, w: 2.76, h: 2.76 };
+  addDarkStage(slide, { x: 0.72, y: 2.12, w: 7.15, h: 3.92 });
+  addSectionLabel(slide, '10:2 practice loop', { x: 1.0, y: 2.32, w: 3.6, h: 0.34 }, COLORS.glow);
+  const ring = { x: 2.66, y: 2.64, w: 3.06, h: 3.06 };
   slide.addShape('ellipse', {
     ...ring,
     fill: { color: COLORS.deep2, transparency: 24 },
@@ -254,59 +251,59 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     line: { color: COLORS.teal, width: 0.8, transparency: 45 },
   });
   const orbitMarks = [
-    { x: 3.33, y: 2.18, color: COLORS.orange },
-    { x: 4.76, y: 3.5, color: COLORS.teal },
-    { x: 3.33, y: 4.9, color: COLORS.green },
-    { x: 1.9, y: 3.5, color: COLORS.yellow },
+    { x: 4.0, y: 2.4, color: COLORS.orange },
+    { x: 5.6, y: 3.88, color: COLORS.teal },
+    { x: 4.0, y: 5.36, color: COLORS.green },
+    { x: 2.4, y: 3.88, color: COLORS.yellow },
   ];
   orbitMarks.forEach((mark, index) => {
     slide.addShape('ellipse', {
       x: mark.x,
       y: mark.y,
-      w: 0.34,
-      h: 0.34,
+      w: 0.42,
+      h: 0.42,
       fill: { color: mark.color },
       line: { color: COLORS.white, transparency: 30 },
     });
     slide.addText(String(index + 1), {
       x: mark.x,
       y: mark.y + 0.09,
-      w: 0.34,
-      h: 0.1,
+      w: 0.42,
+      h: 0.12,
       color: COLORS.white,
-      fontSize: 6.4,
+      fontSize: 8.2,
       bold: true,
       align: 'center',
       margin: 0,
     });
   });
   slide.addShape('ellipse', {
-    x: 2.64,
-    y: 2.78,
-    w: 1.84,
-    h: 1.84,
+    x: 3.23,
+    y: 3.17,
+    w: 1.88,
+    h: 1.88,
     fill: { color: COLORS.deep2 },
     line: { color: COLORS.glow, width: 1.2, transparency: 12 },
   });
   slide.addText('10:2', {
-    x: 2.88,
-    y: 3.18,
-    w: 1.36,
+    x: 3.48,
+    y: 3.56,
+    w: 1.38,
     h: 0.45,
     color: COLORS.orange,
     fontFace: 'Aptos Display',
-    fontSize: 29,
+    fontSize: 31,
     bold: true,
     align: 'center',
     margin: 0,
   });
   slide.addText('teach + practice', {
-    x: 2.88,
-    y: 3.5,
+    x: 3.42,
+    y: 3.9,
     w: 1.36,
     h: 0.18,
     color: COLORS.glow,
-    fontSize: 7.8,
+    fontSize: 9.4,
     bold: true,
     align: 'center',
     margin: 0,
@@ -314,10 +311,10 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   });
 
   const nodes = [
-    { x: 0.92, y: 2.56, accent: COLORS.orange },
-    { x: 4.96, y: 2.56, accent: COLORS.teal },
-    { x: 4.96, y: 4.28, accent: COLORS.green },
-    { x: 0.92, y: 4.28, accent: COLORS.yellow },
+    { x: 1.04, y: 2.88, accent: COLORS.orange },
+    { x: 6.1, y: 2.88, accent: COLORS.teal },
+    { x: 6.1, y: 4.46, accent: COLORS.green },
+    { x: 1.04, y: 4.46, accent: COLORS.yellow },
   ];
 
   stages.slice(0, 4).forEach((stage, index) => {
@@ -325,20 +322,20 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     slide.addShape(SHAPE.roundRect, {
       x: node.x,
       y: node.y,
-      w: 1.2,
-      h: 1.0,
+      w: 1.28,
+      h: 0.88,
       rectRadius: 0.08,
       fill: { color: COLORS.deep2, transparency: 4 },
       line: { color: node.accent, transparency: 8 },
     });
-    addNumberBadge(slide, String(index + 1), { x: node.x + 0.1, y: node.y + 0.12, w: 0.28, h: 0.28 }, node.accent);
+    addNumberBadge(slide, String(index + 1), { x: node.x + 0.12, y: node.y + 0.12, w: 0.32, h: 0.32 }, node.accent);
     slide.addText(stage.label, {
-      x: node.x + 0.15,
+      x: node.x + 0.16,
       y: node.y + 0.52,
-      w: 0.9,
-      h: 0.28,
+      w: 0.96,
+      h: 0.22,
       color: COLORS.white,
-      fontSize: scaledFont(stage.label, { base: 8.4, medium: 7.5, small: 6.7, mediumAt: 20, smallAt: 30 }),
+      fontSize: scaledFont(stage.label, { base: 10.4, medium: 9.2, small: 8.2, mediumAt: 20, smallAt: 30 }),
       bold: true,
       align: 'center',
       fit: 'shrink',
@@ -347,30 +344,30 @@ function addLoopSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     if (stage.detail) {
       slide.addText(compact(stage.detail, 46), {
         x: node.x + 0.16,
-        y: node.y + 0.84,
+        y: node.y + 0.74,
         w: 0.88,
-        h: 0.18,
+        h: 0.14,
         color: COLORS.glow,
-        fontSize: 5.8,
+        fontSize: 6.8,
         align: 'center',
         fit: 'shrink',
         margin: 0,
       });
     }
   });
-  addVisualCallout(slide, slideData, { x: 0.95, y: 5.42, w: 5.42, h: 0.44 });
-  addActivityCard(slide, slideData.activityPrompt, 0, { x: 7.15, y: 1.98, w: 5.1, h: 1.64 });
-  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 4.02, w: 5.1, h: 1.22 });
+  addVisualCallout(slide, slideData, { x: 1.0, y: 5.46, w: 6.56, h: 0.42 });
+  addActivityCard(slide, slideData.activityPrompt, 0, { x: 8.42, y: 2.34, w: 3.76, h: 1.72 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 8.42, y: 4.36, w: 3.76, h: 1.16 });
 }
 
 function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   const stages = visualStages(slideData, 3);
-  addDarkStage(slide, { x: 0.58, y: 1.96, w: 6.22, h: 4.12 });
-  addSectionLabel(slide, 'PBIS tier pyramid', { x: 0.78, y: 2.12, w: 3.0, h: 0.3 }, COLORS.glow);
+  addDarkStage(slide, { x: 0.72, y: 2.12, w: 7.15, h: 3.92 });
+  addSectionLabel(slide, 'PBIS tier pyramid', { x: 1.0, y: 2.32, w: 3.0, h: 0.34 }, COLORS.glow);
   slide.addText('UNIVERSAL', {
-    x: 4.86,
-    y: 5.24,
-    w: 1.22,
+    x: 5.72,
+    y: 5.34,
+    w: 1.4,
     h: 0.18,
     color: COLORS.glow,
     fontSize: 7,
@@ -380,9 +377,9 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
     fit: 'shrink',
   });
   const bands = [
-    { x: 2.54, y: 2.62, w: 1.62, h: 0.42, depth: 0.22, color: COLORS.orange, label: 'Tier 3', pct: '5%', fill: '5B3741' },
-    { x: 1.78, y: 3.42, w: 3.14, h: 0.46, depth: 0.26, color: COLORS.yellow, label: 'Tier 2', pct: '15%', fill: '5C4B34' },
-    { x: 0.92, y: 4.32, w: 4.9, h: 0.52, depth: 0.32, color: COLORS.teal, label: 'Tier 1', pct: '80%', fill: '214E50' },
+    { x: 3.03, y: 2.74, w: 1.95, h: 0.5, depth: 0.24, color: COLORS.orange, label: 'Tier 3', pct: '5%', fill: '5B3741' },
+    { x: 2.17, y: 3.56, w: 3.66, h: 0.56, depth: 0.28, color: COLORS.yellow, label: 'Tier 2', pct: '15%', fill: '5C4B34' },
+    { x: 1.18, y: 4.52, w: 5.62, h: 0.64, depth: 0.34, color: COLORS.teal, label: 'Tier 1', pct: '80%', fill: '214E50' },
   ];
   bands.forEach((band, index) => {
     const stage = stages[index] ?? stages[stages.length - 1];
@@ -401,7 +398,7 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
       w: 0.72,
       h: 0.18,
       color: band.color,
-      fontSize: 7.5,
+      fontSize: 9.4,
       bold: true,
       margin: 0,
     });
@@ -411,7 +408,7 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
       w: 0.36,
       h: 0.18,
       color: band.color,
-      fontSize: 7,
+      fontSize: 8.8,
       bold: true,
       align: 'right',
       margin: 0,
@@ -422,7 +419,7 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
       w: band.w - 1.34,
       h: 0.22,
       color: COLORS.white,
-      fontSize: scaledFont(stage.label, { base: 9.6, medium: 8.6, small: 7.6, mediumAt: 32, smallAt: 44 }),
+      fontSize: scaledFont(stage.label, { base: 12.4, medium: 10.8, small: 9.3, mediumAt: 32, smallAt: 44 }),
       bold: true,
       align: 'center',
       fit: 'shrink',
@@ -435,16 +432,16 @@ function addPyramidSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
         w: band.w - 1.34,
         h: 0.18,
         color: COLORS.glow,
-        fontSize: 6.1,
+        fontSize: 7.4,
         align: 'center',
         fit: 'shrink',
         margin: 0,
       });
     }
   });
-  addVisualCallout(slide, slideData, { x: 0.94, y: 5.42, w: 5.44, h: 0.44 });
-  addActivityCard(slide, slideData.activityPrompt, 1, { x: 7.15, y: 1.98, w: 5.1, h: 1.64 });
-  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 4.02, w: 5.1, h: 1.22 });
+  addVisualCallout(slide, slideData, { x: 1.0, y: 5.48, w: 6.56, h: 0.4 });
+  addActivityCard(slide, slideData.activityPrompt, 1, { x: 8.42, y: 2.34, w: 3.76, h: 1.72 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 8.42, y: 4.36, w: 3.76, h: 1.16 });
 }
 
 function addTimelineSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
@@ -728,167 +725,167 @@ function addMatrixSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
 
 function addScenarioSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   slide.addShape(SHAPE.roundRect, {
-    x: 0.75,
-    y: 2.08,
-    w: 5.9,
-    h: 3.45,
+    x: 0.95,
+    y: 2.42,
+    w: 6.45,
+    h: 3.18,
     rectRadius: 0.08,
     fill: { color: COLORS.softTeal },
     line: { color: 'B7DED8' },
   });
   slide.addShape(SHAPE.rect, {
-    x: 0.75,
-    y: 2.08,
+    x: 0.95,
+    y: 2.42,
     w: 0.12,
-    h: 3.45,
+    h: 3.18,
     fill: { color: COLORS.teal },
     line: { color: COLORS.teal },
   });
   slide.addText('Scenario Lab', {
-    x: 1.05,
-    y: 2.34,
+    x: 1.25,
+    y: 2.72,
     w: 2.2,
     h: 0.3,
     color: COLORS.orange,
-    fontSize: 14,
+    fontSize: 16,
     bold: true,
     margin: 0,
   });
   slide.addText(compact(slideData.activityPrompt, 220), {
-    x: 1.05,
-    y: 2.82,
-    w: 5.25,
-    h: 1.38,
+    x: 1.25,
+    y: 3.24,
+    w: 5.7,
+    h: 1.2,
     color: COLORS.ink,
-    fontSize: 12.2,
+    fontSize: 15.2,
     bold: true,
     fit: 'shrink',
     margin: 0,
   });
   slide.addText('Look for a response the facilitator can observe, coach, and repeat.', {
-    x: 1.05,
-    y: 4.68,
-    w: 4.9,
+    x: 1.25,
+    y: 4.88,
+    w: 5.6,
     h: 0.3,
     color: COLORS.muted,
-    fontSize: 9.2,
+    fontSize: 11,
     margin: 0,
     fit: 'shrink',
   });
   const points = padPoints(slideData.talkingPoints, 3);
-  addSectionLabel(slide, 'Response ladder', { x: 7.15, y: 1.82, w: 2.8, h: 0.28 }, COLORS.green);
+  addSectionLabel(slide, 'Response ladder', { x: 8.42, y: 2.34, w: 2.8, h: 0.3 }, COLORS.green);
   points.slice(0, 3).forEach((point, index) => {
-    const y = 2.28 + index * 1.08;
+    const y = 2.88 + index * 0.92;
     slide.addShape(SHAPE.roundRect, {
-      x: 7.15,
+      x: 8.42,
       y,
-      w: 5.28,
-      h: 0.82,
+      w: 3.76,
+      h: 0.72,
       rectRadius: 0.06,
       fill: { color: index === 1 ? COLORS.softYellow : COLORS.white },
       line: { color: COLORS.line },
     });
-    addNumberBadge(slide, String(index + 1), { x: 7.42, y: y + 0.22, w: 0.32, h: 0.32 }, index === 1 ? COLORS.orange : COLORS.teal);
+    addNumberBadge(slide, String(index + 1), { x: 8.62, y: y + 0.2, w: 0.34, h: 0.34 }, index === 1 ? COLORS.orange : COLORS.teal);
     slide.addText(compact(point, 92), {
-      x: 7.92,
-      y: y + 0.2,
-      w: 4.0,
+      x: 9.12,
+      y: y + 0.16,
+      w: 2.68,
       h: 0.38,
       color: COLORS.ink,
-      fontSize: 9.5,
+      fontSize: 11.5,
       bold: index === 0,
       fit: 'shrink',
       margin: 0,
     });
   });
-  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 5.0, w: 5.28, h: 0.88 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 8.42, y: 5.04, w: 3.76, h: 0.86 });
 }
 
 function addCommitmentSlide(slide: pptxgen.Slide, slideData: DeckSlide) {
   const points = padPoints(slideData.talkingPoints, 3);
   slide.addShape(SHAPE.roundRect, {
-    x: 0.75,
-    y: 2.08,
-    w: 5.9,
-    h: 3.1,
+    x: 0.95,
+    y: 2.42,
+    w: 6.45,
+    h: 3.18,
     rectRadius: 0.08,
     fill: { color: COLORS.softGreen },
     line: { color: 'C8DDB9' },
   });
   slide.addShape('ellipse', {
-    x: 4.62,
-    y: 2.42,
-    w: 1.28,
-    h: 1.28,
+    x: 5.62,
+    y: 2.72,
+    w: 1.18,
+    h: 1.18,
     fill: { color: COLORS.white, transparency: 70 },
     line: { color: COLORS.green, width: 2 },
   });
   slide.addText('Commitment Prompt', {
-    x: 1.05,
-    y: 2.38,
+    x: 1.25,
+    y: 2.72,
     w: 2.5,
     h: 0.3,
     color: COLORS.teal,
-    fontSize: 14,
+    fontSize: 16,
     bold: true,
     margin: 0,
   });
   slide.addText(compact(slideData.activityPrompt, 180), {
-    x: 1.05,
-    y: 2.86,
-    w: 4.72,
+    x: 1.25,
+    y: 3.24,
+    w: 5.2,
     h: 1.14,
     color: COLORS.ink,
-    fontSize: 12.8,
+    fontSize: 15.2,
     bold: true,
     fit: 'shrink',
     margin: 0,
   });
   slide.addText('Capture one practice the learner can use in the next program session.', {
-    x: 1.05,
-    y: 4.46,
-    w: 4.7,
+    x: 1.25,
+    y: 4.84,
+    w: 5.55,
     h: 0.32,
     color: COLORS.muted,
-    fontSize: 9,
+    fontSize: 11,
     margin: 0,
     fit: 'shrink',
   });
-  addSectionLabel(slide, 'Transfer commitments', { x: 7.15, y: 1.82, w: 3.1, h: 0.28 }, COLORS.darkTeal);
+  addSectionLabel(slide, 'Transfer commitments', { x: 8.42, y: 2.34, w: 3.1, h: 0.3 }, COLORS.darkTeal);
   points.slice(0, 3).forEach((point, index) => {
-    const y = 2.28 + index * 1.0;
+    const y = 2.88 + index * 0.92;
     slide.addShape(SHAPE.roundRect, {
-      x: 7.15,
+      x: 8.42,
       y,
-      w: 5.28,
-      h: 0.76,
+      w: 3.76,
+      h: 0.72,
       rectRadius: 0.08,
       fill: { color: index === 1 ? COLORS.softYellow : COLORS.white },
       line: { color: COLORS.line },
     });
     slide.addText(['Start', 'Practice', 'Share'][index] ?? `Step ${index + 1}`, {
-      x: 7.42,
+      x: 8.62,
       y: y + 0.2,
       w: 0.78,
       h: 0.18,
       color: index === 1 ? COLORS.orange : COLORS.darkTeal,
-      fontSize: 7.5,
+      fontSize: 9.2,
       bold: true,
       margin: 0,
     });
     slide.addText(compact(point, 92), {
-      x: 8.38,
+      x: 9.44,
       y: y + 0.16,
-      w: 3.54,
+      w: 2.32,
       h: 0.36,
       color: COLORS.ink,
-      fontSize: 9.5,
+      fontSize: 10.8,
       bold: true,
       fit: 'shrink',
       margin: 0,
     });
   });
-  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 7.15, y: 5.0, w: 5.28, h: 0.88 });
+  addFacilitatorNote(slide, slideData.facilitatorNotes, { x: 8.42, y: 5.04, w: 3.76, h: 0.86 });
 }
 
 function addFacilitatorHandoffSlide(pptx: pptxgen, outline: DeckOutline) {
@@ -1021,15 +1018,15 @@ function addBackground(slide: pptxgen.Slide) {
   });
 }
 
-function addTrainingBackground(slide: pptxgen.Slide, index: number) {
-  slide.background = { color: COLORS.deep };
+function addReadableTrainingBackground(slide: pptxgen.Slide, index: number) {
+  slide.background = { color: COLORS.cream };
   slide.addShape(SHAPE.rect, {
     x: 0,
     y: 0,
     w: SLIDE_W,
     h: SLIDE_H,
-    fill: { color: index % 2 === 0 ? COLORS.deep : '1D3540' },
-    line: { color: index % 2 === 0 ? COLORS.deep : '1D3540' },
+    fill: { color: COLORS.cream },
+    line: { color: COLORS.cream },
   });
   slide.addShape(SHAPE.rect, {
     x: 0,
@@ -1040,39 +1037,29 @@ function addTrainingBackground(slide: pptxgen.Slide, index: number) {
     line: { color: COLORS.orange },
   });
   slide.addShape(SHAPE.rect, {
-    x: 8.35,
-    y: 0.08,
-    w: 4.98,
-    h: SLIDE_H,
-    fill: { color: COLORS.cream, transparency: 6 },
-    line: { color: COLORS.cream, transparency: 100 },
-  });
-  slide.addShape(SHAPE.rect, {
-    x: 12.8,
+    x: 0,
     y: 0.08,
     w: 0.1,
-    h: 6.64,
-    fill: { color: COLORS.teal },
-    line: { color: COLORS.teal },
+    h: SLIDE_H - 0.08,
+    fill: { color: index % 2 === 0 ? COLORS.teal : COLORS.yellow },
+    line: { color: index % 2 === 0 ? COLORS.teal : COLORS.yellow },
   });
-  for (let i = 0; i < 6; i += 1) {
-    slide.addShape(SHAPE.line, {
-      x: 0.65 + i * 0.92,
-      y: 1.86,
-      w: 0,
-      h: 4.46,
-      line: { color: COLORS.white, transparency: 92, width: 0.45 },
-    });
-  }
-  for (let i = 0; i < 4; i += 1) {
-    slide.addShape(SHAPE.line, {
-      x: 0.58,
-      y: 2.18 + i * 0.82,
-      w: 6.22,
-      h: 0,
-      line: { color: COLORS.white, transparency: 94, width: 0.45 },
-    });
-  }
+  slide.addShape(SHAPE.rect, {
+    x: 0.72,
+    y: 2.12,
+    w: 7.15,
+    h: 3.92,
+    fill: { color: COLORS.deep },
+    line: { color: COLORS.deep },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 8.15,
+    y: 2.12,
+    w: 4.35,
+    h: 3.92,
+    fill: { color: COLORS.white },
+    line: { color: COLORS.hairline },
+  });
 }
 
 function addDarkStage(slide: pptxgen.Slide, box: Box) {
@@ -1164,56 +1151,6 @@ function addBrandFallback(slide: pptxgen.Slide, x: number, y: number, size: numb
   });
 }
 
-function addSlideRhythmMark(
-  slide: pptxgen.Slide,
-  visualType: NonNullable<DeckSlide['visualSpec']>['type'],
-) {
-  const rhythmLabel = visualType.replace(/-/g, ' ').toUpperCase();
-  slide.addText(rhythmLabel, {
-    x: 9.18,
-    y: 0.78,
-    w: 2.9,
-    h: 0.16,
-    color: COLORS.quiet,
-    fontSize: 6.8,
-    bold: true,
-    margin: 0,
-    fit: 'shrink',
-  });
-}
-
-function addSlideClaim(slide: pptxgen.Slide, slideData: DeckSlide) {
-  const claim = slideData.visualSpec?.headline || slideData.visualSpec?.callout || slideData.objective;
-  slide.addShape(SHAPE.roundRect, {
-    x: 9.08,
-    y: 0.98,
-    w: 3.28,
-    h: 0.62,
-    rectRadius: 0.03,
-    fill: { color: COLORS.white, transparency: 2 },
-    line: { color: COLORS.hairline },
-  });
-  slide.addShape(SHAPE.rect, {
-    x: 9.08,
-    y: 0.98,
-    w: 0.08,
-    h: 0.62,
-    fill: { color: COLORS.orange },
-    line: { color: COLORS.orange },
-  });
-  slide.addText(compact(claim, 104), {
-    x: 9.28,
-    y: 1.12,
-    w: 2.82,
-    h: 0.28,
-    color: COLORS.ink,
-    fontSize: scaledFont(claim, { base: 8.5, medium: 7.6, small: 6.8, mediumAt: 72, smallAt: 104 }),
-    bold: true,
-    margin: 0,
-    fit: 'shrink',
-  });
-}
-
 function addVisualPanel(slide: pptxgen.Slide, box: Box, fill: string) {
   slide.addShape(SHAPE.roundRect, {
     ...box,
@@ -1228,18 +1165,6 @@ function addVisualPanel(slide: pptxgen.Slide, box: Box, fill: string) {
     h: 0.08,
     fill: { color: COLORS.white, transparency: 45 },
     line: { color: COLORS.white, transparency: 100 },
-  });
-}
-
-function addMicroCaption(slide: pptxgen.Slide, text: string, box: Box) {
-  slide.addText(compact(text, 78), {
-    ...box,
-    color: COLORS.quiet,
-    fontSize: 7.2,
-    italic: true,
-    align: 'right',
-    fit: 'shrink',
-    margin: 0,
   });
 }
 
@@ -1331,8 +1256,8 @@ function addNumberBadge(slide: pptxgen.Slide, label: string, box: Box, color: st
 function addActivityCard(slide: pptxgen.Slide, prompt: string, index: number, box: Box = { x: 7.25, y: 1.75, w: 5.2, h: 1.72 }) {
   const fill = index % 2 === 0 ? COLORS.softTeal : COLORS.softYellow;
   const accent = index % 2 === 0 ? COLORS.teal : COLORS.orange;
-  const promptText = compact(prompt, textLimitForBox(box, 132));
-  const promptSize = scaledFont(promptText, { base: 11.2, medium: 9.8, small: 8.4, mediumAt: 86, smallAt: 118 });
+  const promptText = compact(prompt, textLimitForBox(box, 92));
+  const promptSize = scaledFont(promptText, { base: 15.5, medium: 13.8, small: 12.4, mediumAt: 62, smallAt: 86 });
   slide.addShape(SHAPE.roundRect, {
     ...box,
     rectRadius: 0.05,
@@ -1355,14 +1280,14 @@ function addActivityCard(slide: pptxgen.Slide, prompt: string, index: number, bo
     fill: { color: COLORS.white, transparency: 30 },
     line: { color: COLORS.white, transparency: 100 },
   });
-  addBadge(slide, 'ACTIVITY', { x: box.x + 0.32, y: box.y + 0.18, w: 0.72, h: 0.24 }, accent, COLORS.white);
+  addBadge(slide, 'ACTIVITY', { x: box.x + 0.28, y: box.y + 0.18, w: 0.82, h: 0.28 }, accent, COLORS.white);
   slide.addText('Practice Moment', {
-    x: box.x + 1.18,
-    y: box.y + 0.19,
+    x: box.x + 1.2,
+    y: box.y + 0.17,
     w: box.w - 1.52,
     h: 0.28,
     color: accent,
-    fontSize: 12,
+    fontSize: 13.5,
     bold: true,
     margin: 0,
     fit: 'shrink',
@@ -1388,9 +1313,9 @@ function addActivityCard(slide: pptxgen.Slide, prompt: string, index: number, bo
   });
   slide.addText(promptText, {
     x: box.x + 0.38,
-    y: box.y + 0.64,
+    y: box.y + 0.7,
     w: box.w - 0.82,
-    h: Math.max(0.62, box.h - 1.02),
+    h: Math.max(0.62, box.h - 0.98),
     color: COLORS.ink,
     fontSize: promptSize,
     bold: true,
@@ -1400,8 +1325,8 @@ function addActivityCard(slide: pptxgen.Slide, prompt: string, index: number, bo
 }
 
 function addFacilitatorNote(slide: pptxgen.Slide, note: string, box: Box = { x: 7.25, y: 3.82, w: 5.2, h: 1.28 }) {
-  const noteText = compact(note, textLimitForBox(box, 150));
-  const noteSize = scaledFont(noteText, { base: 8.2, medium: 7.4, small: 6.7, mediumAt: 118, smallAt: 150 });
+  const noteText = compact(note, textLimitForBox(box, 96));
+  const noteSize = scaledFont(noteText, { base: 12.5, medium: 11.2, small: 10.2, mediumAt: 70, smallAt: 92 });
   slide.addShape(SHAPE.roundRect, {
     ...box,
     rectRadius: 0.05,
@@ -1423,16 +1348,16 @@ function addFacilitatorNote(slide: pptxgen.Slide, note: string, box: Box = { x: 
     w: box.w - 1.42,
     h: 0.2,
     color: COLORS.muted,
-    fontSize: 9,
+    fontSize: 10.5,
     bold: true,
     margin: 0,
     fit: 'shrink',
   });
   slide.addText(noteText, {
     x: box.x + 0.3,
-    y: box.y + 0.43,
+    y: box.y + 0.48,
     w: box.w - 0.65,
-    h: Math.max(0.28, box.h - 0.62),
+    h: Math.max(0.28, box.h - 0.68),
     color: COLORS.ink,
     fontSize: noteSize,
     fit: 'shrink',
