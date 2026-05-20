@@ -1,7 +1,7 @@
 import { getLearningPath, trainingModules } from '../src/data/trainingData';
 import type { SourceRef } from '../src/types';
 
-export type AiDeckProvider = 'gemini' | 'openai' | 'claude' | '2slides';
+export type AiDeckProvider = 'gemini' | 'openai' | 'claude';
 
 export type DeckOutlineRequest = {
   provider: AiDeckProvider;
@@ -49,7 +49,7 @@ export type ProviderStatus = {
   id: AiDeckProvider | 'notebooklm_enterprise';
   label: string;
   configured: boolean;
-  mode: 'sync' | 'source-workspace' | 'visual-export';
+  mode: 'sync' | 'source-workspace';
   note: string;
 };
 
@@ -79,13 +79,6 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
       note: 'Premium narrative planner for polished facilitator decks. Requires Anthropic credits.',
     },
     {
-      id: '2slides',
-      label: '2slides Premium Visual',
-      configured: Boolean(env.SLIDES_2SLIDES_API_KEY),
-      mode: 'visual-export',
-      note: 'Premium visual PDF export. Best for wow-factor decks; output is not a fully editable native PPTX.',
-    },
-    {
       id: 'notebooklm_enterprise',
       label: 'NotebookLM Enterprise',
       configured: Boolean(env.NOTEBOOKLM_PROJECT_ID),
@@ -97,7 +90,6 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
 
 export async function generateDeckOutline(request: DeckOutlineRequest): Promise<DeckOutline> {
   const prompt = buildDeckPrompt(request);
-  if (request.provider === '2slides') throw new Error('2slides is a premium visual export provider and does not generate editable outline previews.');
   if (request.provider === 'gemini') return generateWithGemini(prompt, request);
   if (request.provider === 'openai') return generateWithOpenAi(prompt, request);
   return generateWithClaude(prompt, request);

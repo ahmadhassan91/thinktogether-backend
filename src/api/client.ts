@@ -142,13 +142,13 @@ export type ScenarioScorePayload = {
   sourceBasis: string[]
 }
 
-export type AiDeckProvider = 'gemini' | 'openai' | 'claude' | '2slides'
+export type AiDeckProvider = 'gemini' | 'openai' | 'claude'
 
 export type AiProviderStatus = {
   id: AiDeckProvider | 'notebooklm_enterprise'
   label: string
   configured: boolean
-  mode: 'sync' | 'source-workspace' | 'visual-export'
+  mode: 'sync' | 'source-workspace'
   note: string
 }
 
