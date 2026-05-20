@@ -23,6 +23,7 @@ import {
   searchSourceIntelligence,
   summarizeSourceUsage,
 } from './sourceIntelligence';
+import { createTwoSlidesDeck } from './twoSlidesDeck';
 
 export type AppOptions = {
   databaseUrl: string;
@@ -62,7 +63,8 @@ type DeckJob = {
   provider?: string;
   model?: string;
   outline?: DeckOutline;
-  pptx?: Buffer;
+  deck?: Buffer;
+  contentType?: string;
   error?: string;
 };
 
@@ -118,7 +120,7 @@ const adminCreateCohortSchema = z.object({
 });
 
 const aiDeckOutlineSchema = z.object({
-  provider: z.enum(['gemini', 'openai', 'claude']).default('openai'),
+  provider: z.enum(['gemini', 'openai', 'claude', '2slides']).default('openai'),
   topic: z.string().trim().min(8).max(180),
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
   durationMinutes: z.coerce.number().int().min(10).max(180).default(45),
@@ -875,18 +877,30 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     void (async () => {
       updateDeckJob(job.id, { status: 'running' });
       try {
-        const outline = await generateDeckOutline(payload);
-        const pptx = await renderDeckPptx(outline);
-        updateDeckJob(job.id, {
-          status: 'ready',
-          filename: `${slugify(outline.title)}.pptx`,
-          model: outline.model,
-          pptx,
-        });
+        if (payload.provider === '2slides') {
+          const deck = await createTwoSlidesDeck(payload);
+          updateDeckJob(job.id, {
+            status: 'ready',
+            filename: deck.filename,
+            model: deck.model,
+            deck: deck.buffer,
+            contentType: deck.contentType,
+          });
+        } else {
+          const outline = await generateDeckOutline(payload);
+          const pptx = await renderDeckPptx(outline);
+          updateDeckJob(job.id, {
+            status: 'ready',
+            filename: `${slugify(outline.title)}.pptx`,
+            model: outline.model,
+            deck: pptx,
+            contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          });
+        }
       } catch (error) {
         updateDeckJob(job.id, {
           status: 'failed',
-          error: error instanceof Error ? error.message : 'AI PPTX generation failed',
+          error: error instanceof Error ? error.message : 'AI deck generation failed',
         });
       }
     })();
@@ -905,14 +919,14 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     sweepDeckJobs();
     const job = deckJobs.get(String(req.params.jobId));
     if (!job) return res.status(404).json({ error: 'Deck job not found or expired' });
-    if (job.status === 'failed') return res.status(502).json({ error: job.error ?? 'AI PPTX generation failed' });
-    if (job.status !== 'ready' || !job.pptx) return res.status(202).json({ job: publicDeckJob(job) });
+    if (job.status === 'failed') return res.status(502).json({ error: job.error ?? 'AI deck generation failed' });
+    if (job.status !== 'ready' || !job.deck) return res.status(202).json({ job: publicDeckJob(job) });
 
-    res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('content-type', job.contentType ?? 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
     res.setHeader('content-disposition', `attachment; filename="${job.filename ?? 'think-together-training-deck.pptx'}"`);
     if (job.provider) res.setHeader('x-ai-provider', job.provider);
     if (job.model) res.setHeader('x-ai-model', job.model);
-    res.status(200).send(job.pptx);
+    res.status(200).send(job.deck);
   });
 
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

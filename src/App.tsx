@@ -615,7 +615,7 @@ function DeckStudio() {
 
   const deckProviders = useMemo(
     () => providers.filter((item): item is AiProviderStatus & { id: AiDeckProvider } =>
-      item.id === 'openai' || item.id === 'gemini' || item.id === 'claude'),
+      item.id === 'openai' || item.id === 'gemini' || item.id === 'claude' || item.id === '2slides'),
     [providers],
   )
 
@@ -665,7 +665,7 @@ function DeckStudio() {
           <h1 id="deck-studio-title">Training Deck Studio</h1>
           <p>
             Generate a source-grounded facilitator deck and export an editable PowerPoint using the PBIS and SOP artifacts.
-            OpenAI GPT-5.5 is the premium default; Gemini remains available as the fast fallback.
+            OpenAI/Gemini/Claude build editable PowerPoint; 2slides is available as a premium visual PDF path when configured.
           </p>
         </div>
 
@@ -686,6 +686,7 @@ function DeckStudio() {
                   <option value="openai">OpenAI GPT-5.5</option>
                   <option value="gemini">Gemini Flash</option>
                   <option value="claude">Claude Sonnet</option>
+                  <option value="2slides">2slides Premium Visual PDF</option>
                 </select>
               </label>
               <label>
@@ -708,14 +709,16 @@ function DeckStudio() {
               </div>
               <div className="deck-form__actions">
                 <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
-                  {isGenerating ? 'Generating preview' : 'Generate preview'}
+                  {selectedProvider?.mode === 'visual-export' ? 'Preview unavailable for visual export' : isGenerating ? 'Generating preview' : 'Generate preview'}
                 </button>
                 <button
-                  disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
+                  disabled={isDownloadingPptx || !selectedProvider?.configured || !['sync', 'visual-export'].includes(selectedProvider.mode) || topic.length < 8}
                   onClick={handleDownloadPptx}
                   type="button"
                 >
-                  {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
+                  {isDownloadingPptx
+                    ? selectedProvider?.id === '2slides' ? 'Building visual PDF' : 'Building PowerPoint'
+                    : selectedProvider?.id === '2slides' ? 'Download Premium PDF' : 'Download PowerPoint'}
                 </button>
               </div>
               {deckError ? <p role="alert">{deckError}</p> : null}
