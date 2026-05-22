@@ -140,6 +140,55 @@ export type SupervisorReportGroup = {
   learners: SupervisorReportLearner[]
 }
 
+export type SupervisorActionQueueItem = {
+  id: string
+  type: 'completion_alert' | 'lms_export' | 'coaching_nudge' | 'makeup_review'
+  learnerId: string
+  learnerName: string
+  owner: string
+  priority: 'high' | 'medium' | 'low'
+  status: 'ready' | 'review' | 'queued'
+  title: string
+  detail: string
+}
+
+export type AssignmentAutomationPreview = {
+  rules: Array<{
+    id: string
+    trigger: string
+    assignment: string
+    reviewGate: string
+  }>
+  readyForPilot: boolean
+  nextIntegration: string
+}
+
+export type IntegrationReadinessItem = {
+  id: string
+  system: 'HR/ADP' | 'LMS' | 'Email' | 'Content Library'
+  status: 'ready' | 'needs_mapping' | 'needs_approval'
+  owner: string
+  nextStep: string
+}
+
+export type ContentDevelopmentRequest = {
+  id: string
+  request: string
+  audience: string
+  deliveryMode: ContentStudioDeliveryMode
+  status: 'intake' | 'source-mapped' | 'draft-ready' | 'review-needed'
+  artifactsNeeded: string[]
+  outputs: string[]
+}
+
+export type RolloutForecast = {
+  weeklyNewHires: number
+  autoAssignablePercent: number
+  supervisorDigestRecipients: number
+  lmsRowsReady: number
+  estimatedTrainerHoursSaved: number
+}
+
 export type CompletionNotificationPreview = {
   learnerId: string
   learnerName: string
@@ -167,6 +216,11 @@ export type SupervisorReportPayload = {
     facilitators: SupervisorReportGroup[]
     cohorts: SupervisorReportGroup[]
   }
+  actionQueue: SupervisorActionQueueItem[]
+  assignmentAutomation: AssignmentAutomationPreview
+  integrationReadiness: IntegrationReadinessItem[]
+  contentDevelopmentRequests: ContentDevelopmentRequest[]
+  rolloutForecast: RolloutForecast
   completionNotifications: CompletionNotificationPreview[]
 }
 

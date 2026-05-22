@@ -40,6 +40,7 @@ import {
   type AiProviderStatus,
   type AuthUser,
   type ContentStudioPackage,
+  type ContentStudioDeliveryMode,
   type LearningPathPayload,
   type LearnerProfile,
   type SourceLibraryPayload,
@@ -93,6 +94,7 @@ function App() {
   const [sourceLibrary, setSourceLibrary] = useState<SourceLibraryPayload | null>(null)
   const [sourceUsageSummary, setSourceUsageSummary] = useState<SourceUsageSummaryPayload | null>(null)
   const [sourceQaFlags, setSourceQaFlags] = useState<SourceQaFlagsPayload | null>(null)
+  const [selectedScenarioId, setSelectedScenarioId] = useState('')
   const [loadError, setLoadError] = useState('')
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get('invite'), [])
 
@@ -151,7 +153,17 @@ function App() {
   }, [refreshWorkspace])
 
   const learnerModules = useMemo(() => (content ? toLearnerModules(content) : []), [content])
-  const coachScenario = useMemo(() => (content ? toCoachScenario(content) : null), [content])
+  const coachScenarios = useMemo(() => (content ? toCoachScenarios(content) : []), [content])
+  const coachScenario = useMemo(
+    () => coachScenarios.find((scenario) => scenario.id === selectedScenarioId) ?? coachScenarios[0] ?? null,
+    [coachScenarios, selectedScenarioId],
+  )
+
+  useEffect(() => {
+    if (coachScenarios.length && !coachScenarios.some((scenario) => scenario.id === selectedScenarioId)) {
+      setSelectedScenarioId(coachScenarios[0].id)
+    }
+  }, [coachScenarios, selectedScenarioId])
 
   const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => !adminOnlyViews.includes(item.view))
   const activeViewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
@@ -332,6 +344,7 @@ function App() {
             view,
             learnerModules,
             coachScenario,
+            coachScenarios,
             progress,
             dashboard,
             supervisorReport,
@@ -344,6 +357,13 @@ function App() {
             sourceLibrary,
             sourceUsageSummary,
             sourceQaFlags,
+            onSelectScenario: setSelectedScenarioId,
+            onNextScenario: () => {
+              setSelectedScenarioId((currentId) => {
+                const currentIndex = coachScenarios.findIndex((scenario) => scenario.id === currentId)
+                return coachScenarios[(currentIndex + 1) % coachScenarios.length]?.id ?? currentId
+              })
+            },
             onCompleteModule: async (moduleId) => {
               await completeModule(moduleId)
               setProgress(await getProgress())
@@ -433,6 +453,7 @@ function renderView({
   view,
   learnerModules,
   coachScenario,
+  coachScenarios,
   progress,
   dashboard,
   supervisorReport,
@@ -445,6 +466,8 @@ function renderView({
   sourceLibrary,
   sourceUsageSummary,
   sourceQaFlags,
+  onSelectScenario,
+  onNextScenario,
   onCompleteModule,
   onAnswerKnowledgeCheck,
   onCreateLearner,
@@ -457,6 +480,7 @@ function renderView({
   view: WorkspaceView
   learnerModules: LearnerModule[]
   coachScenario: CoachScenario
+  coachScenarios: CoachScenario[]
   progress: ProgressPayload
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
@@ -469,6 +493,8 @@ function renderView({
   sourceLibrary: SourceLibraryPayload | null
   sourceUsageSummary: SourceUsageSummaryPayload | null
   sourceQaFlags: SourceQaFlagsPayload | null
+  onSelectScenario: (scenarioId: string) => void
+  onNextScenario: () => void
   onCompleteModule: (moduleId: string) => Promise<void>
   onAnswerKnowledgeCheck: (moduleId: string, answer: string) => Promise<void>
   onCreateLearner: Parameters<typeof AdminDashboard>[0]['onCreateLearner']
@@ -479,7 +505,15 @@ function renderView({
   onSubmitSurvey: (score: number, notes: string) => Promise<void>
 }) {
   if (view === 'practice') {
-    return <ScenarioCoach scenario={coachScenario} onScoreScenario={scoreScenario} />
+    return (
+      <ScenarioCoach
+        scenario={coachScenario}
+        scenarios={coachScenarios}
+        onSelectScenario={onSelectScenario}
+        onNextScenario={onNextScenario}
+        onScoreScenario={scoreScenario}
+      />
+    )
   }
 
   if (view === 'assist') {
@@ -615,6 +649,11 @@ function SupervisorReportingPanel({
 }) {
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
+  const actionQueue = supervisorReport?.actionQueue ?? []
+  const assignmentAutomation = supervisorReport?.assignmentAutomation
+  const integrationReadiness = supervisorReport?.integrationReadiness ?? []
+  const contentRequests = supervisorReport?.contentDevelopmentRequests ?? []
+  const rolloutForecast = supervisorReport?.rolloutForecast
   const notificationPreviews = supervisorReport?.completionNotifications ?? []
   const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
   const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
@@ -637,6 +676,13 @@ function SupervisorReportingPanel({
             <span><strong>{dashboard.kpis.clearanceReady}</strong> clearance-ready</span>
             <span><strong>{dashboard.kpis.makeupRequired}</strong> need makeup</span>
             <span><strong>{dashboard.kpis.facilitatorRating.toFixed(1)}</strong> facilitator rating</span>
+            {rolloutForecast ? (
+              <>
+                <span><strong>{rolloutForecast.autoAssignablePercent}%</strong> auto-assignable</span>
+                <span><strong>{rolloutForecast.lmsRowsReady}</strong> LMS rows ready</span>
+                <span><strong>{rolloutForecast.estimatedTrainerHoursSaved}</strong> hrs saved/week</span>
+              </>
+            ) : null}
           </section>
           <section className="reporting-view__grid">
             <article>
@@ -662,11 +708,96 @@ function SupervisorReportingPanel({
                 <p>No completion notifications are waiting. Completed learners will appear here for supervisor follow-up.</p>
               )}
             </article>
+            <article>
+              <h2>Phase 2 automation preview</h2>
+              {assignmentAutomation ? (
+                <>
+                  <p>{assignmentAutomation.nextIntegration}</p>
+                  <ul>
+                    {assignmentAutomation.rules.map((rule) => (
+                      <li key={rule.id}>
+                        <strong>{rule.assignment}</strong>
+                        <span>{rule.trigger}</span>
+                        <em>{rule.reviewGate}</em>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p>Assignment rules appear here once supervisor reporting data is available.</p>
+              )}
+            </article>
+          </section>
+          <section className="reporting-view__table" aria-labelledby="supervisor-actions-title">
+            <div className="reporting-view__section-heading">
+              <div>
+                <p className="app-hero__label">Supervisor digest</p>
+                <h2 id="supervisor-actions-title">Action queue</h2>
+              </div>
+              <span>{actionQueue.length} queued</span>
+            </div>
+            {actionQueue.length ? (
+              <table className="reporting-table reporting-table--actions">
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>Learner</th>
+                    <th>Owner</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {actionQueue.map((item) => (
+                    <tr key={item.id}>
+                      <td data-label="Action">
+                        <strong>{item.title}</strong>
+                        <small>{item.detail}</small>
+                      </td>
+                      <td data-label="Learner">{item.learnerName}</td>
+                      <td data-label="Owner">{item.owner}</td>
+                      <td data-label="Priority"><span className="reporting-chip" data-priority={item.priority}>{item.priority}</span></td>
+                      <td data-label="Status">{item.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p>No supervisor actions are queued. Completed learners, LMS exports, and coaching nudges will appear here.</p>
+            )}
+          </section>
+          <section className="reporting-view__grid reporting-view__grid--wide" aria-label="Phase 2 integration and content development">
+            <article>
+              <h2>Integration readiness</h2>
+              <div className="readiness-list">
+                {integrationReadiness.map((item) => (
+                  <div key={item.id}>
+                    <span className="reporting-chip" data-status={item.status}>{item.status.replace(/_/g, ' ')}</span>
+                    <strong>{item.system}</strong>
+                    <small>{item.owner}</small>
+                    <p>{item.nextStep}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+            <article>
+              <h2>Content request pipeline</h2>
+              <div className="content-request-list">
+                {contentRequests.map((item) => (
+                  <div key={item.id}>
+                    <span className="reporting-chip" data-status={item.status}>{item.status.replace(/-/g, ' ')}</span>
+                    <strong>{item.request}</strong>
+                    <small>{item.audience} · {item.deliveryMode}</small>
+                    <p>{item.outputs.join(' + ')}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
           </section>
           {supervisorGroups.length || facilitatorGroups.length ? (
             <section className="reporting-view__table" aria-labelledby="supervisor-groups-title">
               <h2 id="supervisor-groups-title">Supervisor and facilitator drilldown</h2>
-              <table>
+              <table className="reporting-table reporting-table--groups">
                 <thead>
                   <tr>
                     <th>Group</th>
@@ -678,10 +809,10 @@ function SupervisorReportingPanel({
                 <tbody>
                   {[...supervisorGroups, ...facilitatorGroups].slice(0, 8).map((group) => (
                     <tr key={group.id}>
-                      <td>{group.label}</td>
-                      <td>{group.learnerCount}</td>
-                      <td>{group.averageProgressPercent}%</td>
-                      <td>{group.completionRate}%</td>
+                      <td data-label="Group">{group.label}</td>
+                      <td data-label="Learners">{group.learnerCount}</td>
+                      <td data-label="Avg progress">{group.averageProgressPercent}%</td>
+                      <td data-label="Completion rate">{group.completionRate}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -746,21 +877,15 @@ function toLearnerModules(payload: LearningPathPayload): LearnerModule[] {
   })
 }
 
-function toCoachScenario(payload: LearningPathPayload): CoachScenario {
-  const scenario =
-    payload.scenarios.find((item) => item.id === 'jacob-pencil-pouch-bullying') ?? payload.scenarios[0]
-
-  return {
+function toCoachScenarios(payload: LearningPathPayload): CoachScenario[] {
+  return payload.scenarios.map((scenario) => ({
     id: scenario.id,
     title: scenario.title,
     brief: scenario.prompt,
-    expectedAnchors: [
-      'restorative language',
-      'major behavior',
-      'SPM ownership',
-      'safety escalation',
-    ],
-  }
+    skillFocus: scenario.skillFocus,
+    expectedAnchors: scenario.expectedResponseElements,
+    sourceRefs: scenario.sourceRefs,
+  }))
 }
 
 function MilestonePlan({
@@ -805,12 +930,50 @@ function MilestonePlan({
 
 
 function DeckStudio() {
+  const contentRequestStarters: Array<{
+    id: string
+    label: string
+    topic: string
+    audience: string
+    durationMinutes: number
+    deliveryMode: ContentStudioDeliveryMode
+    outputs: string
+  }> = [
+    {
+      id: 'behavior-management',
+      label: 'Behavior management request',
+      topic: 'Behavior management with PBIS restorative responses',
+      audience: 'Think Together program staff and site leaders',
+      durationMinutes: 60,
+      deliveryMode: 'hybrid',
+      outputs: 'Deck + knowledge check + practice scenarios + handout',
+    },
+    {
+      id: 'virtual-makeup',
+      label: 'Virtual makeup path',
+      topic: 'Virtual Program Induction makeup training',
+      audience: 'New hires who missed in-person induction',
+      durationMinutes: 35,
+      deliveryMode: 'virtual',
+      outputs: 'Self-paced outline + final check + completion receipt',
+    },
+    {
+      id: 'trainer-template',
+      label: 'Trainer template starter',
+      topic: 'Standardized training template with objectives and application',
+      audience: 'Think Together training development team',
+      durationMinutes: 45,
+      deliveryMode: 'in-person',
+      outputs: 'Facilitator guide + reusable section structure + review checklist',
+    },
+  ]
   const [providers, setProviders] = useState<AiProviderStatus[]>([])
   const [provider, setProvider] = useState<AiDeckProvider>('openai')
   const [topic, setTopic] = useState('Effective lesson delivery with 10:2 practice')
   const [audience, setAudience] = useState('Think Together program leaders')
   const [durationMinutes, setDurationMinutes] = useState(45)
   const [slideCount, setSlideCount] = useState(6)
+  const [deliveryMode, setDeliveryMode] = useState<ContentStudioDeliveryMode>('in-person')
   const [outline, setOutline] = useState<AiDeckOutline | null>(null)
   const [contentPackage, setContentPackage] = useState<ContentStudioPackage | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -871,7 +1034,7 @@ function DeckStudio() {
         topic,
         audience,
         durationMinutes,
-        deliveryMode: 'in-person',
+        deliveryMode,
         sourceArtifactIds: outline?.sourceArtifacts,
       })
       setContentPackage(payload.package)
@@ -890,11 +1053,11 @@ function DeckStudio() {
           <h1 id="deck-studio-title">Training Deck Studio</h1>
           <p>
             Generate a source-grounded facilitator deck and export an editable PowerPoint using the PBIS and SOP artifacts.
-            OpenAI GPT-5.5 is the premium default; Gemini remains available as the fast fallback.
+            OpenAI Premium is the default when configured; Gemini remains available as the fast fallback.
           </p>
         </div>
 
-        <div className="deck-studio__workspace">
+            <div className="deck-studio__workspace">
           <div className="deck-studio__controls">
             <div className="provider-strip" aria-label="AI provider status">
               {deckProviders.map((item) => (
@@ -908,7 +1071,7 @@ function DeckStudio() {
               <label>
                 Provider
                 <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
-                  <option value="openai">OpenAI GPT-5.5</option>
+                  <option value="openai">OpenAI Premium</option>
                   <option value="gemini">Gemini Flash</option>
                   <option value="claude">Claude Sonnet</option>
                 </select>
@@ -921,16 +1084,24 @@ function DeckStudio() {
                 Audience
                 <input value={audience} onChange={(event) => setAudience(event.target.value)} />
               </label>
-              <div className="deck-form__row">
-                <label>
-                  Minutes
+                  <div className="deck-form__row">
+                    <label>
+                      Minutes
                   <input min={10} max={180} type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
                 </label>
                 <label>
                   Slides
-                  <input min={4} max={14} type="number" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
-                </label>
-              </div>
+                      <input min={4} max={14} type="number" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
+                    </label>
+                  </div>
+                  <label>
+                    Delivery mode
+                    <select value={deliveryMode} onChange={(event) => setDeliveryMode(event.target.value as ContentStudioDeliveryMode)}>
+                      <option value="in-person">In-person</option>
+                      <option value="virtual">Virtual</option>
+                      <option value="hybrid">Hybrid</option>
+                    </select>
+                  </label>
               <div className="deck-form__actions">
                 <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
                   {isGenerating ? 'Generating preview' : 'Generate preview'}
@@ -964,6 +1135,31 @@ function DeckStudio() {
               <span>Editable infographic shapes</span>
               <span>Human review gate</span>
             </div>
+
+            <section className="content-starters" aria-label="Phase 2 content request starters">
+              <div>
+                <p className="app-hero__label">Phase 2 request intake</p>
+                <h2>Start from a real training request</h2>
+                <p>Use these starters to show how weekly content requests become a deck, knowledge check, practice lab, and handout.</p>
+              </div>
+              <div className="content-starters__grid">
+                {contentRequestStarters.map((starter) => (
+                  <button
+                    key={starter.id}
+                    onClick={() => {
+                      setTopic(starter.topic)
+                      setAudience(starter.audience)
+                      setDurationMinutes(starter.durationMinutes)
+                      setDeliveryMode(starter.deliveryMode)
+                    }}
+                    type="button"
+                  >
+                    <strong>{starter.label}</strong>
+                    <span>{starter.outputs}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
           </aside>
         </div>
 

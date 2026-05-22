@@ -3,14 +3,31 @@ import { scoreScenarioResponse, type CoachScenario, type ScenarioScore } from ".
 
 type ScenarioCoachProps = {
   scenario: CoachScenario;
+  scenarios?: CoachScenario[];
+  onSelectScenario?: (scenarioId: string) => void;
+  onNextScenario?: () => void;
   onScoreScenario?: (scenarioId: string, response: string) => Promise<ScenarioScore>;
 };
 
-export const ScenarioCoach = ({ scenario, onScoreScenario }: ScenarioCoachProps) => {
+export const ScenarioCoach = ({ scenario, scenarios = [scenario], onSelectScenario, onNextScenario, onScoreScenario }: ScenarioCoachProps) => {
   const [response, setResponse] = useState("");
   const [feedback, setFeedback] = useState<ScenarioScore | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const handleScenarioChange = (scenarioId: string) => {
+    setResponse("");
+    setFeedback(null);
+    setError("");
+    onSelectScenario?.(scenarioId);
+  };
+
+  const handleNextScenario = () => {
+    setResponse("");
+    setFeedback(null);
+    setError("");
+    onNextScenario?.();
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -36,9 +53,44 @@ export const ScenarioCoach = ({ scenario, onScoreScenario }: ScenarioCoachProps)
   return (
     <section aria-labelledby={`scenario-${scenario.id}`} className="scenario-coach">
       <header>
+        <p className="scenario-coach__eyebrow">Official PBIS scenario practice</p>
         <h2 id={`scenario-${scenario.id}`}>{scenario.title}</h2>
         <p>{scenario.brief}</p>
+        {scenario.skillFocus ? <p className="scenario-coach__focus">Focus: {scenario.skillFocus}</p> : null}
       </header>
+
+      {scenarios.length > 1 ? (
+        <div className="scenario-coach__controls">
+          <label htmlFor="scenario-selector">Scenario</label>
+          <select
+            id="scenario-selector"
+            value={scenario.id}
+            onChange={(event) => handleScenarioChange(event.target.value)}
+          >
+            {scenarios.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={handleNextScenario}>
+            Next official scenario
+          </button>
+        </div>
+      ) : null}
+
+      {scenario.sourceRefs?.length ? (
+        <aside className="scenario-coach__sources" aria-label="Scenario source references">
+          <strong>Source grounding</strong>
+          <ul>
+            {scenario.sourceRefs.map((source) => (
+              <li key={`${source.artifact}-${source.locator}`}>
+                {source.artifact}: {source.locator}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      ) : null}
 
       <form onSubmit={handleSubmit}>
         <label htmlFor={`response-${scenario.id}`}>Response</label>

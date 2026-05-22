@@ -137,7 +137,11 @@ describe('App', () => {
     render(<App />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Practice' }))
-    expect(screen.getByRole('heading', { name: 'Jacob and the Pencil Pouch' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Light Horseplay in Line' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Scenario')).toBeInTheDocument()
+    expect(screen.getByLabelText('Scenario source references')).toHaveTextContent('PBIS PPT Master.pptx')
+    fireEvent.click(screen.getByRole('button', { name: 'Next official scenario' }))
+    expect(screen.getByRole('heading', { name: 'Physical Fight During Transition' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Admin' }))
     expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()

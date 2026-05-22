@@ -242,6 +242,57 @@
   margin-top: 1rem;
 }
 
+.scenario-coach__eyebrow {
+  color: var(--tt-orange);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.scenario-coach__focus {
+  color: var(--tt-muted);
+  font-weight: 700;
+  margin: 0.45rem 0 0;
+}
+
+.scenario-coach__controls {
+  align-items: end;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 1rem 0;
+  padding: 0.85rem;
+}
+
+.scenario-coach__controls label {
+  color: var(--tt-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  grid-column: 1 / -1;
+  text-transform: uppercase;
+}
+
+.scenario-coach__controls select {
+  min-width: 0;
+}
+
+.scenario-coach__sources {
+  background: var(--tt-mint);
+  border: 1px solid var(--tt-teal-soft);
+  border-radius: var(--tt-radius);
+  margin: 1rem 0;
+  padding: 0.85rem;
+}
+
+.scenario-coach__sources ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
 .scenario-coach textarea {
   width: 100%;
   min-height: 8rem;
@@ -446,6 +497,41 @@
 .deck-form__hint {
   margin: 0;
   font-size: 0.9rem;
+}
+
+.content-starters {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  border-top: 1px solid rgba(26, 138, 128, 0.16);
+  padding-top: 1rem;
+}
+
+.content-starters h2 {
+  max-width: 18ch;
+}
+
+.content-starters__grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.content-starters__grid button {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  border: 1px solid rgba(26, 138, 128, 0.22);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--tt-dark);
+  text-align: left;
+  padding: 0.7rem 0.75rem;
+}
+
+.content-starters__grid button span {
+  color: var(--tt-muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.3;
 }
 
 .deck-outline {
@@ -698,6 +784,7 @@
 
 .workspace-main {
   min-width: 0;
+  overflow-x: clip;
 }
 
 .workspace-body {
@@ -747,6 +834,7 @@
 
 .app-content {
   width: min(100% - 1rem, 82rem);
+  min-width: 0;
   padding-top: 0.75rem;
 }
 
@@ -911,13 +999,112 @@
   padding-left: 1.1rem;
 }
 
+.reporting-view li span,
+.reporting-view li em,
+.reporting-view td small {
+  display: block;
+  color: var(--tt-muted);
+  font-size: 0.82rem;
+  font-style: normal;
+  line-height: 1.35;
+  margin-top: 0.18rem;
+}
+
+.reporting-view__section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.reporting-view__section-heading h2 {
+  margin: 0;
+}
+
+.reporting-view__section-heading > span,
+.reporting-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 138, 128, 0.18);
+  background: var(--tt-soft-teal);
+  color: #145d55;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: capitalize;
+  padding: 0.28rem 0.55rem;
+}
+
+.reporting-chip[data-priority='high'] {
+  border-color: rgba(245, 80, 35, 0.32);
+  background: #fff1e9;
+  color: #b83d1f;
+}
+
+.reporting-chip[data-priority='medium'] {
+  border-color: rgba(248, 168, 64, 0.36);
+  background: #fff8e8;
+  color: #7a4b12;
+}
+
+.reporting-chip[data-status='needs_mapping'],
+.reporting-chip[data-status='needs_approval'],
+.reporting-chip[data-status='review-needed'],
+.reporting-chip[data-status='intake'] {
+  border-color: rgba(248, 168, 64, 0.36);
+  background: #fff8e8;
+  color: #7a4b12;
+}
+
+.reporting-chip[data-status='ready'],
+.reporting-chip[data-status='source-mapped'],
+.reporting-chip[data-status='draft-ready'] {
+  border-color: rgba(26, 138, 128, 0.22);
+  background: var(--tt-soft-teal);
+  color: #145d55;
+}
+
+.readiness-list,
+.content-request-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.readiness-list > div,
+.content-request-list > div {
+  display: grid;
+  gap: 0.28rem;
+  border-left: 0.25rem solid var(--tt-teal);
+  background: #fffdf8;
+  padding: 0.7rem 0.75rem;
+}
+
+.readiness-list small,
+.content-request-list small {
+  color: var(--tt-muted);
+  font-weight: 800;
+}
+
+.readiness-list p,
+.content-request-list p {
+  margin: 0;
+}
+
 .reporting-view table {
   width: 100%;
+  min-width: 44rem;
   border-collapse: collapse;
   overflow: hidden;
   border: 1px solid var(--tt-line);
   border-radius: var(--tt-radius-sm);
   background: var(--tt-white);
+}
+
+.reporting-view__table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .reporting-view th,
@@ -938,14 +1125,25 @@
 .scenario-coach,
 .plan-view {
   box-shadow: none;
+  min-width: 0;
   padding: clamp(0.85rem, 2vw, 1.1rem);
 }
 
 .app-content main > section[style],
 .app-content main > div[style],
 .app-content section[style*='border: 1px solid #d8dee7'] {
+  min-width: 0;
   border-color: var(--tt-line) !important;
   background: rgba(255, 255, 255, 0.9);
+}
+
+.app-content main > section[style] {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.app-content [aria-label='Training KPI strip'] {
+  grid-template-columns: repeat(auto-fit, minmax(min(9.25rem, 100%), 1fr)) !important;
 }
 
 .admin-table-wrap {
@@ -1609,6 +1807,153 @@
 
   .reporting-view__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .app-sidebar {
+    padding: 0.75rem;
+  }
+
+  .app-sidebar__brand {
+    align-items: flex-start;
+  }
+
+  .app-sidebar__logo {
+    width: 6.4rem;
+  }
+
+  .app-sidebar__brand strong {
+    font-size: 0.95rem;
+  }
+
+  .workspace-topbar {
+    padding: 0.75rem;
+  }
+
+  .workspace-topbar h1 {
+    font-size: 1.28rem;
+  }
+
+  .workspace-topbar__meta span {
+    font-size: 0.74rem;
+  }
+
+  .app-content {
+    width: min(100% - 0.75rem, 82rem);
+  }
+
+  .app-content main > section[style] {
+    padding: 1rem !important;
+  }
+
+  .app-content main > section[style] > header[style] {
+    margin-bottom: 1rem !important;
+  }
+
+  .app-content main > section[style] h1[style] {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: clamp(1.45rem, 8vw, 1.8rem) !important;
+    line-height: 1.08;
+  }
+
+  .app-content [aria-label='Training KPI strip'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .app-content [aria-label='Training KPI strip'] > div {
+    min-width: 0;
+    padding: 0.7rem !important;
+  }
+
+  .app-content [aria-label='Training KPI strip'] > div > div:first-child {
+    font-size: 0.68rem !important;
+    line-height: 1.15;
+  }
+
+  .app-content [aria-label='Training KPI strip'] > div > div:last-child {
+    font-size: 1.35rem !important;
+  }
+
+  .deck-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-coach__controls {
+    grid-template-columns: 1fr;
+  }
+
+  .reporting-view__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reporting-view__section-heading {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .reporting-view__table {
+    overflow-x: visible;
+  }
+
+  .reporting-view table.reporting-table {
+    display: block;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .reporting-view table.reporting-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .reporting-view table.reporting-table tbody,
+  .reporting-view table.reporting-table tr,
+  .reporting-view table.reporting-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .reporting-view table.reporting-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .reporting-view table.reporting-table tr {
+    border: 1px solid var(--tt-line);
+    border-radius: var(--tt-radius-sm);
+    background: var(--tt-white);
+    overflow: hidden;
+  }
+
+  .reporting-view table.reporting-table td {
+    display: grid;
+    grid-template-columns: minmax(6.8rem, 38%) minmax(0, 1fr);
+    gap: 0.7rem;
+    align-items: start;
+    border-bottom: 1px solid var(--tt-line);
+    padding: 0.7rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .reporting-view table.reporting-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .reporting-view table.reporting-table td::before {
+    content: attr(data-label);
+    color: var(--tt-muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
   }
 }
 

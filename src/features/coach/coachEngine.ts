@@ -5,7 +5,12 @@ export type CoachScenario = {
   id: string;
   title: string;
   brief: string;
+  skillFocus?: string;
   expectedAnchors?: string[];
+  sourceRefs?: Array<{
+    artifact: string;
+    locator: string;
+  }>;
 };
 
 export type ScenarioScore = {
