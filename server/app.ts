@@ -1166,6 +1166,18 @@ async function readAdminKpis(db: AppDatabase) {
     completed AS (
       SELECT COUNT(*)::int AS completed_modules FROM progress WHERE status = 'completed'
     ),
+    completed_required AS (
+      SELECT COUNT(DISTINCT (u.learner_id, p.module_id))::int AS completed_required_modules
+      FROM progress p
+      JOIN users u ON u.id = p.user_id AND u.learner_id IS NOT NULL
+      JOIN modules m ON m.id = p.module_id AND m.required_for_completion
+      WHERE p.status = 'completed'
+    ),
+    assigned_required AS (
+      SELECT COUNT(*)::int AS assigned_required_modules
+      FROM learners l
+      JOIN modules m ON l.assigned_path_ids ? m.path_id AND m.required_for_completion
+    ),
     practice AS (
       SELECT COUNT(*)::int AS practice_submissions FROM practice_submissions
     ),
@@ -1176,7 +1188,9 @@ async function readAdminKpis(db: AppDatabase) {
     FROM learner_count, attendance, clearance, attempts, learner_assignments, feedback, completed, practice, module_count
   `);
   const row = result.rows[0] as AdminKpiRow;
-  const completionRate = row.modules > 0 ? Math.round((row.completed_modules / row.modules) * 100) : 0;
+  const completionRate = row.assigned_required_modules > 0
+    ? Math.min(100, Math.round((row.completed_required_modules / row.assigned_required_modules) * 100))
+    : 0;
   const surveyCompletion = row.assigned_surveys > 0 ? Math.round((row.submitted_surveys / row.assigned_surveys) * 100) : 0;
   return {
     totalLearners: row.total_learners,
@@ -1308,6 +1322,11 @@ async function readSupervisorReport(db: AppDatabase) {
       facilitators: groupSupervisorReportLearners(learners, 'facilitator'),
       cohorts: groupSupervisorReportLearners(learners, 'cohort'),
     },
+    actionQueue: buildSupervisorActionQueue(learners),
+    assignmentAutomation: buildAssignmentAutomationPreview(learners),
+    integrationReadiness: buildIntegrationReadiness(learners),
+    contentDevelopmentRequests: buildContentDevelopmentRequests(),
+    rolloutForecast: buildRolloutForecast(learners),
     completionNotifications: learners
       .filter((learner) => learner.completion.completedAt)
       .map((learner) => ({
@@ -1333,6 +1352,206 @@ async function readSupervisorReport(db: AppDatabase) {
 }
 
 type SupervisorReportLearner = ReturnType<typeof mapSupervisorReportLearner>;
+
+function buildRolloutForecast(learners: SupervisorReportLearner[]) {
+  const learnersWithAssignmentData = learners.filter((learner) =>
+    learner.email && learner.cohort.id && learner.cohort.region && learner.path.id,
+  ).length;
+  const completedLearners = learners.filter((learner) => learner.completion.status === 'completed');
+  const supervisorRecipients = new Set(learners.map((learner) => learner.supervisor).filter((item) => item !== 'Unassigned'));
+
+  return {
+    weeklyNewHires: 50,
+    autoAssignablePercent: learners.length ? Math.round((learnersWithAssignmentData / learners.length) * 100) : 0,
+    supervisorDigestRecipients: supervisorRecipients.size || 1,
+    lmsRowsReady: completedLearners.filter((learner) => !learner.completion.exportedToLms).length,
+    estimatedTrainerHoursSaved: 12,
+  };
+}
+
+function buildIntegrationReadiness(learners: SupervisorReportLearner[]) {
+  const hasMissingSupervisor = learners.some((learner) => learner.supervisor === 'Unassigned');
+  const hasCompletedNotExported = learners.some((learner) => learner.completion.status === 'completed' && !learner.completion.exportedToLms);
+
+  return [
+    {
+      id: 'adp-roster-import',
+      system: 'HR/ADP' as const,
+      status: hasMissingSupervisor ? 'needs_mapping' as const : 'ready' as const,
+      owner: 'HR + Training Ops',
+      nextStep: hasMissingSupervisor
+        ? 'Map supervisor, title, region, site, and hire date fields before automatic assignment.'
+        : 'Pilot weekly CSV import before moving to API sync.',
+    },
+    {
+      id: 'lms-clearance-export',
+      system: 'LMS' as const,
+      status: hasCompletedNotExported ? 'needs_approval' as const : 'ready' as const,
+      owner: 'Training Ops',
+      nextStep: hasCompletedNotExported
+        ? 'Review completion rows and approve LMS export handoff.'
+        : 'Keep LMS as source of record; export timestamp and content version stay in this tool.',
+    },
+    {
+      id: 'supervisor-email-digest',
+      system: 'Email' as const,
+      status: 'needs_approval' as const,
+      owner: 'Program Training & Development',
+      nextStep: 'Approve digest wording for completion alerts, coaching nudges, and makeup reminders.',
+    },
+    {
+      id: 'source-library-governance',
+      system: 'Content Library' as const,
+      status: 'ready' as const,
+      owner: 'Program Training & Development',
+      nextStep: 'Route generated decks, checks, and handouts through human review before facilitation.',
+    },
+  ];
+}
+
+function buildContentDevelopmentRequests() {
+  return [
+    {
+      id: 'behavior-management-request',
+      request: 'Behavior management training not already in the catalog',
+      audience: 'Program staff and site leaders',
+      deliveryMode: 'hybrid' as const,
+      status: 'source-mapped' as const,
+      artifactsNeeded: ['PBIS PPT Master', 'PBIS part 3 template', 'Knowledge check sample'],
+      outputs: ['Facilitator deck', 'Knowledge check', 'Practice scenarios', 'Learner handout'],
+    },
+    {
+      id: 'virtual-makeup-path',
+      request: 'Virtual option for staff who miss in-person training',
+      audience: 'New hires needing makeup completion',
+      deliveryMode: 'virtual' as const,
+      status: 'intake' as const,
+      artifactsNeeded: ['Program Induction SOP', 'Survey questions', 'Attendance/clearance rules'],
+      outputs: ['Self-paced module sequence', 'Final knowledge check', 'Completion receipt'],
+    },
+    {
+      id: 'standardized-trainer-template',
+      request: 'Standardized trainer template with objectives, application, and resources',
+      audience: '20-person training development team',
+      deliveryMode: 'in-person' as const,
+      status: 'draft-ready' as const,
+      artifactsNeeded: ['Existing deck templates', 'SOP source library', 'Brand guidance'],
+      outputs: ['Deck starter', 'Facilitator guide', 'Resource sheet', 'Review checklist'],
+    },
+  ];
+}
+
+function buildSupervisorActionQueue(learners: SupervisorReportLearner[]) {
+  return learners
+    .flatMap((learner) => {
+      const owner = learner.supervisor !== 'Unassigned' ? learner.supervisor : learner.facilitatorIds[0] ?? 'Training Ops';
+      const items: Array<{
+        id: string;
+        type: 'completion_alert' | 'lms_export' | 'coaching_nudge' | 'makeup_review';
+        learnerId: string;
+        learnerName: string;
+        owner: string;
+        priority: 'high' | 'medium' | 'low';
+        status: 'ready' | 'review' | 'queued';
+        title: string;
+        detail: string;
+      }> = [];
+
+      if (learner.completion.status === 'completed') {
+        items.push({
+          id: `${learner.id}-${learner.path.id}-completion-alert`,
+          type: 'completion_alert',
+          learnerId: learner.id,
+          learnerName: learner.name,
+          owner,
+          priority: 'medium',
+          status: 'ready',
+          title: 'Supervisor completion alert',
+          detail: `${learner.name} passed ${learner.path.title} with ${learner.scores.completionScore}% and can be included in the next supervisor digest.`,
+        });
+      }
+
+      if (learner.completion.status === 'completed' && !learner.completion.exportedToLms) {
+        items.push({
+          id: `${learner.id}-${learner.path.id}-lms-export`,
+          type: 'lms_export',
+          learnerId: learner.id,
+          learnerName: learner.name,
+          owner: 'Training Ops',
+          priority: 'high',
+          status: 'review',
+          title: 'LMS clearance export pending',
+          detail: `${learner.name} has a confirmation code but has not been marked exported to LMS yet.`,
+        });
+      }
+
+      if (learner.completion.status === 'in_progress' && learner.progressPercent >= 50) {
+        items.push({
+          id: `${learner.id}-${learner.path.id}-coaching-nudge`,
+          type: 'coaching_nudge',
+          learnerId: learner.id,
+          learnerName: learner.name,
+          owner,
+          priority: 'low',
+          status: 'queued',
+          title: 'Practice coaching nudge',
+          detail: `${learner.name} is ${learner.progressPercent}% complete; send a short practice reminder before the final check.`,
+        });
+      }
+
+      if (learner.completion.status === 'needs_review' || (learner.progressPercent < 100 && learner.practiceSubmissions > 0)) {
+        items.push({
+          id: `${learner.id}-${learner.path.id}-makeup-review`,
+          type: 'makeup_review',
+          learnerId: learner.id,
+          learnerName: learner.name,
+          owner,
+          priority: 'medium',
+          status: 'review',
+          title: 'Makeup or review follow-up',
+          detail: `${learner.name} has practice activity but is not clearance-ready. Review whether makeup support is needed.`,
+        });
+      }
+
+      return items;
+    })
+    .sort((left, right) => priorityRank(left.priority) - priorityRank(right.priority))
+    .slice(0, 12);
+}
+
+function buildAssignmentAutomationPreview(learners: SupervisorReportLearner[]) {
+  const hasSiteLeadPath = learners.some((learner) => learner.title?.toLowerCase().includes('site lead'));
+  return {
+    rules: [
+      {
+        id: 'new-hire-program-pro',
+        trigger: 'HR/ADP new hire with Program Pro or Program Leader title',
+        assignment: 'Auto-enroll in Program Induction - PBIS and the next regional cohort',
+        reviewGate: 'Flag missing region, site, supervisor, or start date before invite is sent',
+      },
+      {
+        id: 'site-lead-onboarding',
+        trigger: 'HR/ADP role change or new hire with Site Lead title',
+        assignment: 'Auto-enroll in Site Lead Onboarding four-week path',
+        reviewGate: 'Route holiday/missed-session exceptions to Training Ops for makeup scheduling',
+      },
+      {
+        id: 'completion-digest',
+        trigger: 'Learner completes final knowledge check, survey, and commitment',
+        assignment: 'Queue supervisor notification and LMS clearance export row',
+        reviewGate: 'Human review remains required before LMS/HR writeback',
+      },
+    ],
+    readyForPilot: learners.length > 0,
+    nextIntegration: hasSiteLeadPath
+      ? 'Map ADP title and site fields to automatic Program Induction and Site Lead Onboarding enrollment.'
+      : 'Start with CSV/ADP export import, then promote title/region matching to automatic cohort assignment.',
+  };
+}
+
+function priorityRank(priority: 'high' | 'medium' | 'low') {
+  return priority === 'high' ? 0 : priority === 'medium' ? 1 : 2;
+}
 
 function mapSupervisorReportLearner(row: SupervisorReportRow) {
   const requiredModuleCount = Number(row.required_module_count);
@@ -1834,6 +2053,8 @@ type AdminKpiRow = {
   assigned_surveys: number;
   submitted_surveys: number;
   completed_modules: number;
+  completed_required_modules: number;
+  assigned_required_modules: number;
   practice_submissions: number;
   modules: number;
 };
