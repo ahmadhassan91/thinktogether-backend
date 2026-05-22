@@ -162,20 +162,17 @@ export async function generateContentStudioPackage(request: ContentStudioPackage
   const prompt = buildContentStudioPrompt(request);
   try {
     if (provider === 'gemini') {
-      const packagePayload = await generateContentPackageWithGemini(prompt);
+      const packagePayload = await withContentStudioTimeout(generateContentPackageWithGemini(prompt));
       return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
     }
     if (provider === 'openai') {
-      const packagePayload = await generateContentPackageWithOpenAi(prompt);
+      const packagePayload = await withContentStudioTimeout(generateContentPackageWithOpenAi(prompt));
       return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
     }
-    const packagePayload = await generateContentPackageWithClaude(prompt);
+    const packagePayload = await withContentStudioTimeout(generateContentPackageWithClaude(prompt));
     return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
   } catch (error) {
-    if (error instanceof Error && error.message.includes('API key is not configured')) {
-      return buildDeterministicContentStudioPackage(request);
-    }
-    throw error;
+    return buildDeterministicContentStudioPackage(request);
   }
 }
 
@@ -330,6 +327,21 @@ function isProviderConfigured(provider: AiDeckProvider, env = process.env) {
   if (provider === 'gemini') return Boolean(env.GEMINI_API_KEY);
   if (provider === 'openai') return Boolean(env.OPENAI_API_KEY);
   return Boolean(env.ANTHROPIC_API_KEY);
+}
+
+async function withContentStudioTimeout<T>(operation: Promise<T>): Promise<T> {
+  const timeoutMs = Number(process.env.CONTENT_STUDIO_PROVIDER_TIMEOUT_MS ?? 18_000);
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Content Studio provider timed out.')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function generateWithGemini(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {

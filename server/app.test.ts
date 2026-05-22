@@ -1045,6 +1045,45 @@ describe.sequential('Think Together training API', () => {
     }
   });
 
+  it('falls back to a deterministic Content Studio package when the configured AI provider fails', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('Content Studio provider timed out.');
+    }));
+
+    try {
+      const response = await request(handle.app)
+        .post('/api/content-studio/packages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          provider: 'openai',
+          topic: 'Behavior management with PBIS restorative responses',
+          audience: 'Think Together program staff and site leaders',
+          durationMinutes: 60,
+          deliveryMode: 'hybrid',
+          sourceArtifactIds: ['pbis-ppt-master', 'sop-program-induction'],
+        })
+        .expect(201);
+
+      expect(response.body.package).toEqual(
+        expect.objectContaining({
+          provider: 'deterministic',
+          model: 'content-studio-fallback-v1',
+          title: 'Behavior management with PBIS restorative responses',
+          audience: 'Think Together program staff and site leaders',
+        }),
+      );
+      expect(response.body.package.deckOutline.length).toBeGreaterThanOrEqual(4);
+    } finally {
+      if (previousOpenAiKey) process.env.OPENAI_API_KEY = previousOpenAiKey;
+      else delete process.env.OPENAI_API_KEY;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('exports a branded AI-generated PowerPoint for admins', async () => {
     handle = await boot();
     const token = await loginToken(handle);
