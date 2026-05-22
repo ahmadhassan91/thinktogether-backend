@@ -437,6 +437,12 @@
   color: var(--tt-orange);
 }
 
+.deck-form__actions .button-secondary {
+  border-color: #48c0b0;
+  background: var(--tt-soft-teal);
+  color: #145d55;
+}
+
 .deck-form__hint {
   margin: 0;
   font-size: 0.9rem;
@@ -504,6 +510,66 @@
   padding: 0.65rem 0.75rem;
 }
 
+.content-package {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: #fffdf8;
+  padding: 1rem;
+}
+
+.content-package h2,
+.content-package h3 {
+  margin: 0;
+}
+
+.content-package__grid,
+.content-package__sections {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.content-package__grid article,
+.content-package__sections li {
+  border: 1px solid rgba(26, 138, 128, 0.16);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-white);
+  padding: 0.85rem;
+}
+
+.content-package__grid article {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.content-package__grid ul,
+.content-package__grid ol {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.content-package__sections {
+  margin: 0;
+  padding: 0;
+}
+
+.content-package__sections li {
+  display: grid;
+  gap: 0.25rem;
+  list-style: none;
+}
+
+.content-package__sections span,
+.content-package__sections em {
+  color: var(--tt-muted);
+}
+
+.content-package__sections em {
+  font-style: normal;
+  font-weight: 800;
+}
+
 @media (min-width: 48rem) {
   .app-hero {
     grid-template-columns: minmax(0, 1.8fr) minmax(20rem, 0.8fr);
@@ -515,7 +581,7 @@
   }
 
   .deck-form__actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .deck-studio__workspace {
@@ -524,6 +590,10 @@
   }
 
   .deck-outline__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .content-package__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -630,6 +700,14 @@
   min-width: 0;
 }
 
+.workspace-body {
+  display: grid;
+  gap: 0.85rem;
+  align-items: start;
+  width: min(100%, 96rem);
+  margin-inline: auto;
+}
+
 .workspace-topbar {
   display: flex;
   flex-wrap: wrap;
@@ -670,6 +748,190 @@
 .app-content {
   width: min(100% - 1rem, 82rem);
   padding-top: 0.75rem;
+}
+
+.workspace-helper,
+.sandbox-reviewer,
+.reporting-view {
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--tt-dark);
+  text-align: left;
+}
+
+.workspace-helper {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.workspace-helper strong {
+  color: var(--tt-dark);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.workspace-helper span {
+  color: var(--tt-muted);
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.sandbox-reviewer {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0.5rem 1rem;
+  padding: 0.95rem;
+}
+
+.sandbox-reviewer h2,
+.reporting-view h1,
+.reporting-view h2 {
+  margin: 0;
+}
+
+.sandbox-reviewer p,
+.reporting-view p,
+.reporting-view li {
+  color: var(--tt-muted);
+}
+
+.sandbox-reviewer label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--tt-dark);
+  font-weight: 850;
+}
+
+.sandbox-reviewer textarea {
+  width: 100%;
+  min-height: 8.5rem;
+  resize: vertical;
+}
+
+.sandbox-reviewer__prompts {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sandbox-reviewer__prompts span {
+  border-left: 0.25rem solid var(--tt-orange);
+  background: #fff8ee;
+  color: var(--tt-dark);
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.25;
+  padding: 0.55rem 0.65rem;
+}
+
+.reporting-view {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(0.95rem, 2vw, 1.15rem);
+}
+
+.reporting-view header {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.reporting-view header p:last-child {
+  max-width: 64rem;
+}
+
+.reporting-view__metrics,
+.reporting-view__grid,
+.reporting-view__coming-next,
+.reporting-view__table {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.reporting-view__metrics span,
+.reporting-view__grid article,
+.reporting-view__coming-next,
+.reporting-view__table {
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  background: #fffdf8;
+  padding: 0.85rem;
+}
+
+.reporting-view__metrics span {
+  display: grid;
+  gap: 0.25rem;
+  color: #145d55;
+  font-size: 0.83rem;
+  font-weight: 850;
+}
+
+.reporting-view__metrics strong {
+  color: var(--tt-dark);
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.reporting-view__grid article {
+  display: grid;
+  gap: 0.75rem;
+  background: var(--tt-white);
+}
+
+.reporting-view dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.reporting-view dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--tt-line);
+  padding-bottom: 0.45rem;
+}
+
+.reporting-view dt {
+  color: var(--tt-muted);
+  font-weight: 800;
+}
+
+.reporting-view dd {
+  margin: 0;
+  color: var(--tt-dark);
+  font-weight: 900;
+}
+
+.reporting-view ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.reporting-view table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-white);
+}
+
+.reporting-view th,
+.reporting-view td {
+  border-bottom: 1px solid var(--tt-line);
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+}
+
+.reporting-view th {
+  background: #fff5e7;
+  color: var(--tt-dark);
+  font-size: 0.78rem;
+  text-transform: uppercase;
 }
 
 .app-content main,
@@ -1340,6 +1602,14 @@
   .source-library__paths {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .reporting-view__metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .reporting-view__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (min-width: 58rem) {
@@ -1389,6 +1659,18 @@
 
   .workspace-topbar {
     padding: 0.95rem 1.25rem;
+  }
+
+  .workspace-body {
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    padding-right: 0.75rem;
+  }
+
+  .sandbox-reviewer {
+    position: sticky;
+    top: 1rem;
+    margin-top: 0.75rem;
+    margin-inline: 0;
   }
 
   .learner-home {

@@ -70,25 +70,46 @@ export async function createDatabase(options: DatabaseOptions): Promise<AppDatab
 
 async function dropAll(db: AppDatabase) {
   await db.query(`
-    DROP TABLE IF EXISTS completion_records;
-    DROP TABLE IF EXISTS practice_submissions;
-    DROP TABLE IF EXISTS knowledge_attempts;
-    DROP TABLE IF EXISTS progress;
-    DROP TABLE IF EXISTS facilitator_feedback;
-    DROP TABLE IF EXISTS admin_audit_events;
-    DROP TABLE IF EXISTS clearance_records;
-    DROP TABLE IF EXISTS attendance_records;
-    DROP TABLE IF EXISTS participants;
-    DROP TABLE IF EXISTS learner_invites;
-    DROP TABLE IF EXISTS sessions;
-    DROP TABLE IF EXISTS users;
-    DROP TABLE IF EXISTS cohorts;
-    DROP TABLE IF EXISTS learners;
-    DROP TABLE IF EXISTS knowledge_checks;
-    DROP TABLE IF EXISTS scenarios;
-    DROP TABLE IF EXISTS modules;
-    DROP TABLE IF EXISTS learning_paths;
-    DROP TABLE IF EXISTS schema_migrations;
+    DROP TABLE IF EXISTS
+      completion_records,
+      practice_submissions,
+      knowledge_attempts,
+      progress,
+      facilitator_feedback,
+      admin_audit_events,
+      clearance_records,
+      attendance_records,
+      participants,
+      learner_invites,
+      sessions,
+      users,
+      cohorts,
+      learners,
+      knowledge_checks,
+      scenarios,
+      modules,
+      learning_paths,
+      schema_migrations,
+      _completion_records,
+      _practice_submissions,
+      _knowledge_attempts,
+      _progress,
+      _facilitator_feedback,
+      _admin_audit_events,
+      _clearance_records,
+      _attendance_records,
+      _participants,
+      _learner_invites,
+      _sessions,
+      _users,
+      _cohorts,
+      _learners,
+      _knowledge_checks,
+      _scenarios,
+      _modules,
+      _learning_paths,
+      _schema_migrations
+    CASCADE;
   `);
 }
 

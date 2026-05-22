@@ -94,6 +94,53 @@ describe('AdminDashboard', () => {
     expect(screen.queryByRole('row', { name: /Ben Carter/i })).not.toBeInTheDocument()
   })
 
+  it('renders dashboard-backed feedback metrics and export actions for admins', () => {
+    const onDownloadExport = vi.fn()
+
+    render(
+      <AdminDashboard
+        dashboard={{
+          kpis: {
+            totalLearners: 2,
+            attended: 2,
+            completedModules: 5,
+            clearanceReady: 1,
+            blocked: 0,
+            makeupRequired: 1,
+            averageKnowledgeScore: 86,
+            surveyCompletion: 50,
+            facilitatorRating: 4.4,
+            practiceSubmissions: 2,
+            completionRate: 50,
+          },
+          readinessByTrack: [
+            {
+              track: 'Program Induction - PBIS',
+              enrolled: 2,
+              clearanceReady: 1,
+              needsCoaching: 1,
+              blocked: 0,
+            },
+          ],
+          cohorts: [{ id: 'cohort-1', name: 'PBIS MVP Pilot', region: 'Emerging Region', participants: 2 }],
+        }}
+        onDownloadExport={onDownloadExport}
+      />,
+    )
+
+    expect(screen.getByLabelText('Survey completion KPI')).toHaveTextContent('50%')
+    expect(screen.getByLabelText('Facilitator rating KPI')).toHaveTextContent('4.4')
+    expect(screen.getByText('Postgres-backed data')).toBeInTheDocument()
+    expect(screen.getByText('Role-gated admin API')).toBeInTheDocument()
+    expect(screen.getByRole('row', { name: /Program Induction - PBIS/i })).toHaveTextContent('1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download clearance-ready CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download completions CSV' }))
+
+    expect(onDownloadExport).toHaveBeenNthCalledWith(1, 'clearance')
+    expect(onDownloadExport).toHaveBeenNthCalledWith(2, 'completions')
+  })
+
   it('renders management forms and calls supplied create handlers', async () => {
     const onCreateLearner = vi.fn()
     const onCreateCohort = vi.fn()
@@ -183,11 +230,13 @@ describe('AdminDashboard', () => {
     )
 
     expect(screen.getByRole('form', { name: 'Create cohort' })).toBeInTheDocument()
+    expect(screen.getByRole('row', { name: /PIT May 2026/i })).toHaveTextContent('Program Induction - PBIS')
+    expect(screen.getByRole('row', { name: /PIT May 2026/i })).toHaveTextContent('Program Pro Facilitator')
 
     fireEvent.change(screen.getByLabelText('Cohort name'), { target: { value: 'NHO June 2026' } })
     fireEvent.change(screen.getByLabelText('Cohort region'), { target: { value: 'Central' } })
-    fireEvent.change(screen.getByLabelText('Cohort facilitator IDs'), { target: { value: 'facilitator-2' } })
-    fireEvent.change(screen.getByLabelText('Cohort path IDs'), { target: { value: 'program-induction-pbis' } })
+    fireEvent.change(screen.getByLabelText('Cohort facilitator'), { target: { value: 'facilitator-1' } })
+    fireEvent.change(screen.getByLabelText('Cohort learning path'), { target: { value: 'program-induction-pbis' } })
     fireEvent.change(screen.getByLabelText('Cohort starts at'), { target: { value: '2026-06-03T09:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add cohort' }))
 
@@ -195,7 +244,7 @@ describe('AdminDashboard', () => {
       name: 'NHO June 2026',
       region: 'Central',
       startsAt: '2026-06-03T04:00:00.000Z',
-      facilitatorIds: ['facilitator-2'],
+      facilitatorIds: ['facilitator-1'],
       pathIds: ['program-induction-pbis'],
     })
   })

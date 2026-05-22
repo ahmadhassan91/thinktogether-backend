@@ -60,6 +60,12 @@ export type CompletionRecord = {
   completedAt: string
   score: number
   passFail: 'pass' | 'needs-review'
+  finalKnowledgeCheck?: {
+    score: number
+    correctCount: number
+    totalCount: number
+    passFail: 'pass' | 'needs-review'
+  }
   confirmationCode: string
   moduleStatuses: Array<{
     moduleId: string
@@ -67,6 +73,28 @@ export type CompletionRecord = {
     status: LearnerModuleStatus
     completedAt?: string
   }>
+}
+
+export type FinalKnowledgeCheckItem = {
+  moduleId: string
+  moduleTitle: string
+  prompt: string
+  choices: string[]
+  correctAnswer: string
+  explanation: string
+}
+
+export type FinalKnowledgeCheckAnswer = {
+  moduleId: string
+  answer: string
+}
+
+export type FinalKnowledgeCheckResult = {
+  score: number
+  correctCount: number
+  totalCount: number
+  passFail: 'pass' | 'needs-review'
+  attempts: Array<LearnerAttempt & { moduleId: string }>
 }
 
 export function sortModules(modules: LearnerModule[]) {
@@ -149,6 +177,62 @@ export function canCompletePath(modules: LearnerModule[], progress: LearnerProgr
     .every((module) => progressByModule.get(module.id)?.status === 'complete')
 }
 
+export function getFinalKnowledgeCheckItems(modules: LearnerModule[]): FinalKnowledgeCheckItem[] {
+  return sortModules(modules).flatMap((module) => {
+    if (!module.required || module.action?.type !== 'quiz') {
+      return []
+    }
+
+    return [
+      {
+        moduleId: module.id,
+        moduleTitle: module.title,
+        prompt: module.action.prompt,
+        choices: module.action.choices,
+        correctAnswer: module.action.correctAnswer,
+        explanation: module.action.explanation,
+      },
+    ]
+  })
+}
+
+export function scoreFinalKnowledgeCheck({
+  items,
+  answers,
+  answeredAt = new Date().toISOString(),
+  passingScore = 80,
+}: {
+  items: FinalKnowledgeCheckItem[]
+  answers: FinalKnowledgeCheckAnswer[]
+  answeredAt?: string
+  passingScore?: number
+}): FinalKnowledgeCheckResult {
+  const answersByModule = new Map(answers.map((answer) => [answer.moduleId, answer.answer]))
+  const attempts = items.map((item) => {
+    const answer = answersByModule.get(item.moduleId) ?? ''
+    const correct = answer === item.correctAnswer
+
+    return {
+      moduleId: item.moduleId,
+      answer,
+      correct,
+      feedback: item.explanation,
+      answeredAt,
+    }
+  })
+  const correctCount = attempts.filter((attempt) => attempt.correct).length
+  const totalCount = items.length
+  const score = totalCount === 0 ? 100 : Math.round((correctCount / totalCount) * 100)
+
+  return {
+    score,
+    correctCount,
+    totalCount,
+    passFail: score >= passingScore ? 'pass' : 'needs-review',
+    attempts,
+  }
+}
+
 export function createCompletionRecord({
   learner,
   pathId,
@@ -156,6 +240,7 @@ export function createCompletionRecord({
   contentVersion,
   modules,
   progress,
+  assessmentResult,
   completedAt = new Date().toISOString(),
   passingScore = 80,
 }: {
@@ -165,6 +250,7 @@ export function createCompletionRecord({
   contentVersion: string
   modules: LearnerModule[]
   progress: LearnerProgress[]
+  assessmentResult?: FinalKnowledgeCheckResult
   completedAt?: string
   passingScore?: number
 }): CompletionRecord {
@@ -174,9 +260,11 @@ export function createCompletionRecord({
     (module) => progressByModule.get(module.id)?.status === 'complete',
   )
   const score =
-    requiredModules.length === 0
+    assessmentResult?.score ??
+    (requiredModules.length === 0
       ? 100
-      : Math.round((completedRequired.length / requiredModules.length) * 100)
+      : Math.round((completedRequired.length / requiredModules.length) * 100))
+  const passFail = assessmentResult?.passFail ?? (score >= passingScore ? 'pass' : 'needs-review')
 
   return {
     learnerId: learner.id,
@@ -186,7 +274,15 @@ export function createCompletionRecord({
     contentVersion,
     completedAt,
     score,
-    passFail: score >= passingScore ? 'pass' : 'needs-review',
+    passFail,
+    finalKnowledgeCheck: assessmentResult
+      ? {
+          score: assessmentResult.score,
+          correctCount: assessmentResult.correctCount,
+          totalCount: assessmentResult.totalCount,
+          passFail: assessmentResult.passFail,
+        }
+      : undefined,
     confirmationCode: `PBIS-${learner.id}-${Date.parse(completedAt)}`,
     moduleStatuses: sortModules(requiredModules).map((module) => {
       const moduleProgress = progressByModule.get(module.id)

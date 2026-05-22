@@ -92,6 +92,84 @@ export type AdminDashboardPayload = {
   cohorts: Array<{ id: string; name: string; region: string; participants: number }>
 }
 
+export type SupervisorReportLearner = {
+  id: string
+  name: string
+  firstName: string
+  lastName: string
+  email: string
+  supervisor: string
+  facilitatorIds: string[]
+  title: string | null
+  site: string | null
+  cohort: {
+    id: string
+    name: string
+    region: string
+  }
+  path: {
+    id: string
+    title: string
+  }
+  progressPercent: number
+  scores: {
+    knowledgeScore: number
+    practiceScore: number
+    completionScore: number
+  }
+  completion: {
+    status: 'not_started' | 'in_progress' | 'completed' | 'needs_review'
+    completedModuleCount: number
+    requiredModuleCount: number
+    passFail: 'pass' | 'needs-review' | null
+    confirmationCode: string | null
+    completedAt: string | null
+    exportedToLms: boolean
+    exportedAt: string | null
+  }
+  practiceSubmissions: number
+}
+
+export type SupervisorReportGroup = {
+  id: string
+  label: string
+  learnerCount: number
+  cohortIds: string[]
+  averageProgressPercent: number
+  completionRate: number
+  learners: SupervisorReportLearner[]
+}
+
+export type CompletionNotificationPreview = {
+  learnerId: string
+  learnerName: string
+  email: string
+  supervisor: string
+  facilitatorIds: string[]
+  cohortId: string
+  cohortName: string
+  pathId: string
+  pathTitle: string
+  completionStatus: SupervisorReportLearner['completion']['status']
+  progressPercent: number
+  score: number
+  confirmationCode: string | null
+  completedAt: string | null
+  exportedToLms: boolean
+  exportedAt: string | null
+  preview: string
+}
+
+export type SupervisorReportPayload = {
+  generatedAt: string
+  groups: {
+    supervisors: SupervisorReportGroup[]
+    facilitators: SupervisorReportGroup[]
+    cohorts: SupervisorReportGroup[]
+  }
+  completionNotifications: CompletionNotificationPreview[]
+}
+
 export type AdminLearner = {
   id: string
   firstName: string
@@ -183,6 +261,60 @@ export type AiDeckOutline = {
     sourceRefs: Array<{ artifact: string; locator: string }>
   }>
   handoffNotes: string[]
+  sourceArtifacts: string[]
+  generatedAt: string
+}
+
+export type ContentStudioDeliveryMode = 'in-person' | 'virtual' | 'hybrid'
+
+export type ContentStudioPackageInput = {
+  provider?: AiDeckProvider
+  topic: string
+  audience: string
+  durationMinutes: number
+  deliveryMode: ContentStudioDeliveryMode
+  sourceArtifactIds?: string[]
+}
+
+export type ContentStudioPackage = {
+  provider: AiDeckProvider | 'deterministic'
+  model: string
+  title: string
+  audience: string
+  durationMinutes: number
+  learningObjectives: string[]
+  deckOutline: Array<{
+    sectionTitle: string
+    objective: string
+    keyPoints: string[]
+    activityPrompt: string
+    facilitatorNotes: string
+    sourceRefs: SourceRef[]
+  }>
+  knowledgeCheckQuestions: Array<{
+    question: string
+    options: string[]
+    correctAnswer: string
+    rationale: string
+    sourceRefs: SourceRef[]
+  }>
+  practiceActivity: {
+    title: string
+    instructions: string[]
+    facilitatorPrompt: string
+    successCriteria: string[]
+    sourceRefs: SourceRef[]
+  }
+  facilitatorGuideNotes: string[]
+  learnerHandout: {
+    summary: string
+    keyTakeaways?: string[]
+    resourceList: Array<SourceRef & { title?: string }>
+  }
+  deliveryNotes: {
+    inPerson: string[]
+    virtual: string[]
+  }
   sourceArtifacts: string[]
   generatedAt: string
 }
@@ -380,6 +512,10 @@ export async function getAdminDashboard() {
   return request<AdminDashboardPayload>('/api/admin/dashboard')
 }
 
+export async function getAdminSupervisorReport() {
+  return request<SupervisorReportPayload>('/api/admin/supervisor-report')
+}
+
 export async function getAdminAuditEvents() {
   return request<{ events: AdminAuditEvent[] }>('/api/admin/audit-events')
 }
@@ -487,6 +623,13 @@ export async function createAiDeckOutline(input: AiDeckOutlineInput) {
   }
 
   throw new Error(error ?? 'Deck preview generation timed out. Please try again.')
+}
+
+export async function createContentStudioPackage(input: ContentStudioPackageInput) {
+  return request<{ package: ContentStudioPackage }>('/api/content-studio/packages', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 }
 
 export async function downloadAiDeckPptx(input: AiDeckOutlineInput) {

@@ -5,7 +5,12 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { SOURCE_LIBRARY_VERSION, trainingLearningPaths, trainingSourceLibrary } from '../src/data/trainingData';
 import { scoreScenarioResponse } from '../src/features/coach/coachEngine';
-import { generateDeckOutline, getAiProviderStatuses, type DeckOutline } from './aiDeck';
+import {
+  generateContentStudioPackage,
+  generateDeckOutline,
+  getAiProviderStatuses,
+  type DeckOutline,
+} from './aiDeck';
 import { createInviteToken, createSessionToken, hashPassword, hashToken, verifyPassword } from './auth';
 import {
   CONTENT_VERSION,
@@ -123,6 +128,15 @@ const aiDeckOutlineSchema = z.object({
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
   durationMinutes: z.coerce.number().int().min(10).max(180).default(45),
   slideCount: z.coerce.number().int().min(4).max(14).default(8),
+});
+
+const contentStudioPackageSchema = z.object({
+  provider: z.enum(['gemini', 'openai', 'claude']).optional(),
+  topic: z.string().trim().min(8).max(180),
+  audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
+  durationMinutes: z.coerce.number().int().min(15).max(240).default(60),
+  deliveryMode: z.enum(['in-person', 'virtual', 'hybrid']).default('in-person'),
+  sourceArtifactIds: z.array(z.string().trim().min(1)).max(12).default([]),
 });
 
 const sourceSearchSchema = z.object({
@@ -486,6 +500,10 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     });
   });
 
+  app.get('/api/admin/supervisor-report', authenticate, requireAdmin, async (_req, res) => {
+    res.json(await readSupervisorReport(db));
+  });
+
   app.get('/api/admin/audit-events', authenticate, requireAdmin, async (_req, res) => {
     const result = await db.query(
       `SELECT
@@ -755,6 +773,27 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
 
   app.get('/api/ai/providers', authenticate, requireAdmin, async (_req, res) => {
     res.json({ providers: getAiProviderStatuses() });
+  });
+
+  app.post('/api/content-studio/packages', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = contentStudioPackageSchema.parse(req.body);
+
+    try {
+      const trainingPackage = await generateContentStudioPackage(payload);
+      await recordAuditEvent(db, req.user, 'content_studio_package.generated', 'content_studio_package', slugify(trainingPackage.title), {
+        provider: trainingPackage.provider,
+        model: trainingPackage.model,
+        topic: payload.topic,
+        audience: payload.audience,
+        deliveryMode: payload.deliveryMode,
+        durationMinutes: payload.durationMinutes,
+        sourceArtifactIds: payload.sourceArtifactIds,
+      });
+      res.status(201).json({ package: trainingPackage });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Content Studio package generation failed';
+      res.status(502).json({ error: message });
+    }
   });
 
   app.post('/api/ai/deck-outline', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
@@ -1178,6 +1217,212 @@ async function readReadinessByTrack(db: AppDatabase) {
   }));
 }
 
+async function readSupervisorReport(db: AppDatabase) {
+  const result = await db.query(`
+    WITH learner_paths AS (
+      SELECT
+        l.id AS learner_id,
+        l.first_name,
+        l.last_name,
+        l.email,
+        NULLIF(l.supervisor, '') AS supervisor,
+        l.title,
+        l.site,
+        c.id AS cohort_id,
+        c.name AS cohort_name,
+        c.region,
+        c.facilitator_ids,
+        assigned_path.path_id
+      FROM learners l
+      JOIN cohorts c ON c.id = l.cohort_id
+      CROSS JOIN LATERAL jsonb_array_elements_text(l.assigned_path_ids) AS assigned_path(path_id)
+    )
+    SELECT
+      lp.learner_id,
+      lp.first_name,
+      lp.last_name,
+      lp.email,
+      lp.supervisor,
+      lp.title,
+      lp.site,
+      lp.cohort_id,
+      lp.cohort_name,
+      lp.region,
+      lp.facilitator_ids,
+      lp.path_id,
+      learning_paths.title AS path_title,
+      COALESCE(required_modules.required_module_count, 0)::int AS required_module_count,
+      COALESCE(progress.completed_module_count, 0)::int AS completed_module_count,
+      COALESCE(knowledge.average_knowledge_score, 0)::int AS average_knowledge_score,
+      COALESCE(practice.average_practice_score, 0)::float AS average_practice_score,
+      COALESCE(practice.practice_submissions, 0)::int AS practice_submissions,
+      completion_records.score AS completion_score,
+      completion_records.pass_fail,
+      completion_records.confirmation_code,
+      completion_records.completed_at,
+      completion_records.exported_to_lms,
+      completion_records.exported_at
+    FROM learner_paths lp
+    JOIN learning_paths ON learning_paths.id = lp.path_id
+    LEFT JOIN users u ON u.learner_id = lp.learner_id
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS required_module_count
+      FROM modules
+      WHERE modules.path_id = lp.path_id AND modules.required_for_completion
+    ) required_modules ON true
+    LEFT JOIN LATERAL (
+      SELECT COUNT(DISTINCT progress.module_id)::int AS completed_module_count
+      FROM progress
+      JOIN modules ON modules.id = progress.module_id
+      WHERE progress.user_id = u.id
+        AND progress.status = 'completed'
+        AND modules.path_id = lp.path_id
+        AND modules.required_for_completion
+    ) progress ON true
+    LEFT JOIN LATERAL (
+      SELECT ROUND(AVG(CASE WHEN knowledge_attempts.correct THEN 100 ELSE 0 END))::int AS average_knowledge_score
+      FROM knowledge_attempts
+      JOIN knowledge_checks ON knowledge_checks.id = knowledge_attempts.item_id
+      JOIN modules ON modules.id = knowledge_checks.module_id
+      WHERE knowledge_attempts.user_id = u.id AND modules.path_id = lp.path_id
+    ) knowledge ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        ROUND(AVG(practice_submissions.score)::numeric, 1) AS average_practice_score,
+        COUNT(*)::int AS practice_submissions
+      FROM practice_submissions
+      JOIN scenarios ON scenarios.id = practice_submissions.scenario_id
+      JOIN modules ON modules.id = scenarios.module_id
+      WHERE practice_submissions.user_id = u.id AND modules.path_id = lp.path_id
+    ) practice ON true
+    LEFT JOIN completion_records
+      ON completion_records.learner_id = lp.learner_id AND completion_records.path_id = lp.path_id
+    ORDER BY COALESCE(lp.supervisor, 'Unassigned'), lp.cohort_name, lp.last_name, lp.first_name, learning_paths.title
+  `);
+
+  const learners = (result.rows as SupervisorReportRow[]).map(mapSupervisorReportLearner);
+  return {
+    generatedAt: new Date().toISOString(),
+    groups: {
+      supervisors: groupSupervisorReportLearners(learners, 'supervisor'),
+      facilitators: groupSupervisorReportLearners(learners, 'facilitator'),
+      cohorts: groupSupervisorReportLearners(learners, 'cohort'),
+    },
+    completionNotifications: learners
+      .filter((learner) => learner.completion.completedAt)
+      .map((learner) => ({
+        learnerId: learner.id,
+        learnerName: learner.name,
+        email: learner.email,
+        supervisor: learner.supervisor,
+        facilitatorIds: learner.facilitatorIds,
+        cohortId: learner.cohort.id,
+        cohortName: learner.cohort.name,
+        pathId: learner.path.id,
+        pathTitle: learner.path.title,
+        completionStatus: learner.completion.status,
+        progressPercent: learner.progressPercent,
+        score: learner.scores.completionScore,
+        confirmationCode: learner.completion.confirmationCode,
+        completedAt: learner.completion.completedAt,
+        exportedToLms: learner.completion.exportedToLms,
+        exportedAt: learner.completion.exportedAt,
+        preview: `${learner.name} completed ${learner.path.title} for ${learner.cohort.name} with ${learner.progressPercent}% progress.`,
+      })),
+  };
+}
+
+type SupervisorReportLearner = ReturnType<typeof mapSupervisorReportLearner>;
+
+function mapSupervisorReportLearner(row: SupervisorReportRow) {
+  const requiredModuleCount = Number(row.required_module_count);
+  const completedModuleCount = Number(row.completed_module_count);
+  const progressPercent = requiredModuleCount > 0 ? Math.round((completedModuleCount / requiredModuleCount) * 100) : 0;
+  const completionStatus = supervisorCompletionStatus(row, progressPercent);
+  const completedAt = row.completed_at?.toISOString() ?? null;
+  return {
+    id: row.learner_id,
+    name: `${row.first_name} ${row.last_name}`,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    email: row.email,
+    supervisor: row.supervisor ?? 'Unassigned',
+    facilitatorIds: row.facilitator_ids.length > 0 ? row.facilitator_ids : ['Unassigned'],
+    title: row.title,
+    site: row.site,
+    cohort: {
+      id: row.cohort_id,
+      name: row.cohort_name,
+      region: row.region,
+    },
+    path: {
+      id: row.path_id,
+      title: row.path_title,
+    },
+    progressPercent,
+    scores: {
+      knowledgeScore: Number(row.average_knowledge_score),
+      practiceScore: Number(row.average_practice_score),
+      completionScore: row.completion_score === null ? progressPercent : Number(row.completion_score),
+    },
+    completion: {
+      status: completionStatus,
+      completedModuleCount,
+      requiredModuleCount,
+      passFail: row.pass_fail,
+      confirmationCode: row.confirmation_code,
+      completedAt,
+      exportedToLms: row.exported_to_lms ?? false,
+      exportedAt: row.exported_at?.toISOString() ?? null,
+    },
+    practiceSubmissions: Number(row.practice_submissions),
+  };
+}
+
+function supervisorCompletionStatus(row: SupervisorReportRow, progressPercent: number) {
+  if (row.pass_fail === 'needs-review') return 'needs_review';
+  if (row.pass_fail === 'pass' || row.completed_at) return 'completed';
+  if (progressPercent > 0 || Number(row.average_knowledge_score) > 0 || Number(row.practice_submissions) > 0) return 'in_progress';
+  return 'not_started';
+}
+
+function groupSupervisorReportLearners(
+  learners: SupervisorReportLearner[],
+  groupBy: 'supervisor' | 'facilitator' | 'cohort',
+) {
+  const groups = new Map<string, { label: string; learners: SupervisorReportLearner[]; cohortIds: Set<string> }>();
+  for (const learner of learners) {
+    const keys =
+      groupBy === 'supervisor'
+        ? [learner.supervisor]
+        : groupBy === 'facilitator'
+          ? learner.facilitatorIds
+          : [learner.cohort.id];
+
+    for (const key of keys) {
+      const label = groupBy === 'cohort' ? learner.cohort.name : key;
+      const existing = groups.get(key) ?? { label, learners: [], cohortIds: new Set<string>() };
+      existing.learners.push(learner);
+      existing.cohortIds.add(learner.cohort.id);
+      groups.set(key, existing);
+    }
+  }
+
+  return Array.from(groups.entries()).map(([id, group]) => {
+    const completed = group.learners.filter((learner) => learner.completion.status === 'completed').length;
+    const totalProgress = group.learners.reduce((sum, learner) => sum + learner.progressPercent, 0);
+    return {
+      id,
+      label: group.label,
+      learnerCount: group.learners.length,
+      cohortIds: Array.from(group.cohortIds).sort(),
+      averageProgressPercent: group.learners.length ? Math.round(totalProgress / group.learners.length) : 0,
+      completionRate: group.learners.length ? Math.round((completed / group.learners.length) * 100) : 0,
+      learners: group.learners,
+    };
+  });
+}
+
 async function upsertCompletionRecordIfReady(
   db: AppDatabase,
   user: User | undefined,
@@ -1599,6 +1844,33 @@ type ReadinessRow = {
   clearance_ready: number;
   needs_coaching: number;
   blocked: number;
+};
+
+type SupervisorReportRow = {
+  learner_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  supervisor: string | null;
+  title: string | null;
+  site: string | null;
+  cohort_id: string;
+  cohort_name: string;
+  region: string;
+  facilitator_ids: string[];
+  path_id: string;
+  path_title: string;
+  required_module_count: number;
+  completed_module_count: number;
+  average_knowledge_score: number | string;
+  average_practice_score: number | string;
+  practice_submissions: number;
+  completion_score: number | null;
+  pass_fail: 'pass' | 'needs-review' | null;
+  confirmation_code: string | null;
+  completed_at: Date | null;
+  exported_to_lms: boolean | null;
+  exported_at: Date | null;
 };
 
 type CompletionRecordRow = {

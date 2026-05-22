@@ -40,6 +40,8 @@ const statusLabels: Record<ParticipantStatus, string> = {
 
 const uniqueValues = (values: string[]) => [...new Set(values)].sort((left, right) => left.localeCompare(right))
 const inviteExceptionStatuses = ['pending', 'revoked', 'expired'] as const
+const baseLearningPathIds = ['program-induction-pbis']
+const baseFacilitatorIds = ['facilitator-1']
 
 const chipStyle = {
   border: '1px solid #ccd5df',
@@ -102,6 +104,23 @@ export function AdminDashboard({
   const regions = useMemo(() => uniqueValues(participants.map((participant) => participant.region)), [participants])
   const cohorts = useMemo(() => uniqueValues(participants.map((participant) => participant.cohort)), [participants])
   const learnerRegions = useMemo(() => uniqueValues(learners.map((learner) => learner.region).filter(Boolean)), [learners])
+  const learningPathOptions = useMemo(
+    () =>
+      uniqueValues([
+        ...baseLearningPathIds,
+        ...managementCohorts.flatMap((item) => item.pathIds),
+        ...learners.flatMap((learner) => learner.assignedPathIds),
+      ]).map((id) => ({ id, label: formatLearningPathId(id) })),
+    [learners, managementCohorts],
+  )
+  const facilitatorOptions = useMemo(
+    () =>
+      uniqueValues([
+        ...baseFacilitatorIds,
+        ...managementCohorts.flatMap((item) => item.facilitatorIds),
+      ]).map((id) => ({ id, label: formatFacilitatorId(id) })),
+    [managementCohorts],
+  )
   const inviteExceptions = useMemo(
     () => learners.filter((learner) => isInviteException(learner.inviteStatus)),
     [learners],
@@ -522,10 +541,18 @@ export function AdminDashboard({
           <h2 style={{ fontSize: '1.2rem', margin: '0 0 0.75rem' }}>
             {showUsers ? 'Learner management' : 'Cohort management'}
           </h2>
+          <p style={{ color: '#657184', margin: '-0.35rem 0 0.9rem', maxWidth: 760 }}>
+            {showUsers
+              ? 'Create learner records, connect them to a cohort, then generate invite links when the roster is ready.'
+              : 'Set the session name, region, primary facilitator, learning path, and start time without needing to paste raw system IDs.'}
+          </p>
           <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
             {showUsers && onCreateLearner ? (
               <form aria-label="Create learner" onSubmit={handleLearnerSubmit}>
                 <h3 style={{ fontSize: '1rem', margin: '0 0 0.75rem' }}>Add learner</h3>
+                <p style={{ color: '#657184', fontSize: '0.9rem', margin: '-0.35rem 0 0.75rem' }}>
+                  Cohort can stay unassigned during intake; assignment risks are flagged in the managed learner table.
+                </p>
                 <div style={{ display: 'grid', gap: '0.65rem' }}>
                   <label>
                     First name
@@ -582,6 +609,9 @@ export function AdminDashboard({
             {showCohorts && onCreateCohort ? (
               <form aria-label="Create cohort" onSubmit={handleCohortSubmit}>
                 <h3 style={{ fontSize: '1rem', margin: '0 0 0.75rem' }}>Add cohort</h3>
+                <p style={{ color: '#657184', fontSize: '0.9rem', margin: '-0.35rem 0 0.75rem' }}>
+                  MVP cohorts use one primary facilitator and one primary learning path. The saved payload still carries the API IDs.
+                </p>
                 <div style={{ display: 'grid', gap: '0.65rem' }}>
                   <label>
                     Cohort name
@@ -604,25 +634,36 @@ export function AdminDashboard({
                     />
                   </label>
                   <label>
-                    Facilitator IDs
-                    <input
-                      aria-label="Cohort facilitator IDs"
-                      onChange={(event) =>
-                        setCohortForm({ ...cohortForm, facilitatorIds: splitCsvInput(event.target.value) })
-                      }
+                    Primary facilitator
+                    <select
+                      aria-label="Cohort facilitator"
+                      onChange={(event) => setCohortForm({ ...cohortForm, facilitatorIds: event.target.value ? [event.target.value] : [] })}
                       style={{ display: 'block', marginTop: '0.25rem', width: '100%' }}
-                      value={cohortForm.facilitatorIds.join(', ')}
-                    />
+                      value={cohortForm.facilitatorIds[0] ?? ''}
+                    >
+                      <option value="">Select facilitator</option>
+                      {facilitatorOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
-                    Path IDs
-                    <input
-                      aria-label="Cohort path IDs"
-                      onChange={(event) => setCohortForm({ ...cohortForm, pathIds: splitCsvInput(event.target.value) })}
+                    Learning path
+                    <select
+                      aria-label="Cohort learning path"
+                      onChange={(event) => setCohortForm({ ...cohortForm, pathIds: event.target.value ? [event.target.value] : [] })}
                       required
                       style={{ display: 'block', marginTop: '0.25rem', width: '100%' }}
-                      value={cohortForm.pathIds.join(', ')}
-                    />
+                      value={cohortForm.pathIds[0] ?? ''}
+                    >
+                      {learningPathOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     Starts at
@@ -666,10 +707,10 @@ export function AdminDashboard({
                           </td>
                           <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{item.learnerCount}</td>
                           <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
-                            {item.pathIds.join(', ') || 'None'}
+                            {formatIdList(item.pathIds, formatLearningPathId)}
                           </td>
                           <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
-                            {item.facilitatorIds.join(', ') || 'None'}
+                            {formatIdList(item.facilitatorIds, formatFacilitatorId)}
                           </td>
                         </tr>
                       ))}
@@ -951,12 +992,30 @@ function ReadinessCard({
   )
 }
 
-function splitCsvInput(value: string) {
-  return value.split(',').map((item) => item.trim()).filter(Boolean)
-}
-
 function isInviteException(status: AdminLearner['inviteStatus']) {
   return inviteExceptionStatuses.includes(status as (typeof inviteExceptionStatuses)[number])
+}
+
+function formatLearningPathId(id: string) {
+  if (id === 'program-induction-pbis') return 'Program Induction - PBIS'
+  return humanizeId(id)
+}
+
+function formatFacilitatorId(id: string) {
+  if (id === 'facilitator-1') return 'Program Pro Facilitator'
+  return humanizeId(id)
+}
+
+function formatIdList(values: string[], formatter: (value: string) => string) {
+  return values.length ? values.map(formatter).join(', ') : 'None'
+}
+
+function humanizeId(value: string) {
+  return value
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.toUpperCase() === part ? part : part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function humanizeAuditAction(action: string) {

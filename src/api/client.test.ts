@@ -4,6 +4,7 @@ import {
   createAdminCohort,
   createAdminLearner,
   createAiDeckOutline,
+  createContentStudioPackage,
   createLearnerInvite,
   downloadAiDeckPptx,
   downloadAdminExport,
@@ -13,6 +14,7 @@ import {
   getMe,
   revokeLearnerInvite,
   storeToken,
+  submitTrainingSurvey,
 } from './client'
 
 const fetchMock = vi.fn()
@@ -179,6 +181,49 @@ describe('admin management client', () => {
     expect(click).toHaveBeenCalled()
   })
 
+  it('posts learner training survey feedback with the expected API shape', async () => {
+    storeToken('learner-token')
+    fetchMock.mockResolvedValueOnce(json({
+      survey: {
+        id: 'survey-1',
+        learnerId: 'learner-1',
+        facilitatorId: 'facilitator-1',
+        pathId: 'program-induction-pbis',
+        rating: 'ready',
+        score: 5,
+        notes: 'The Program Pro made the site routine practice concrete.',
+        surveySubmitted: true,
+        submittedAt: '2026-05-09T00:00:00.000Z',
+      },
+    }))
+
+    await expect(submitTrainingSurvey({
+      pathId: 'program-induction-pbis',
+      facilitatorId: 'facilitator-1',
+      score: 5,
+      notes: 'The Program Pro made the site routine practice concrete.',
+    })).resolves.toMatchObject({
+      survey: {
+        learnerId: 'learner-1',
+        facilitatorId: 'facilitator-1',
+        pathId: 'program-induction-pbis',
+        score: 5,
+        surveySubmitted: true,
+      },
+    })
+
+    const surveyInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/surveys/training')
+    expect(surveyInit.method).toBe('POST')
+    expect(surveyInit.body).toBe(JSON.stringify({
+      pathId: 'program-induction-pbis',
+      facilitatorId: 'facilitator-1',
+      score: 5,
+      notes: 'The Program Pro made the site routine practice concrete.',
+    }))
+    expect((surveyInit.headers as Headers).get('authorization')).toBe('Bearer learner-token')
+  })
+
   it('loads AI providers, posts deck outlines, and downloads PPTX with auth headers', async () => {
     storeToken('admin-token')
     fetchMock
@@ -246,6 +291,51 @@ describe('admin management client', () => {
     const pptxInit = fetchMock.mock.calls[4][1] as RequestInit
     expect(fetchMock.mock.calls[4][0]).toBe('/api/ai/deck-jobs/deck-job-1/pptx')
     expect((pptxInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+  })
+
+  it('posts Content Studio package requests with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock.mockResolvedValueOnce(json({
+      package: {
+        provider: 'deterministic',
+        model: 'content-studio-fallback-v1',
+        title: 'PBIS practice lab',
+        learningObjectives: ['Explain PBIS routines', 'Practice explicit teaching'],
+        deckOutline: [],
+        knowledgeCheckQuestions: [],
+        practiceActivity: { title: 'Practice lab', instructions: [], facilitatorPrompt: '', successCriteria: [] },
+        facilitatorGuideNotes: [],
+        learnerHandout: { summary: '', resourceList: [] },
+        deliveryNotes: { inPerson: [], virtual: [] },
+        sourceArtifacts: [],
+        generatedAt: '2026-05-21T00:00:00.000Z',
+      },
+    }))
+
+    await expect(createContentStudioPackage({
+      topic: 'PBIS practice lab',
+      audience: 'Program leaders',
+      durationMinutes: 60,
+      deliveryMode: 'hybrid',
+      sourceArtifactIds: ['pbis-ppt-master'],
+    })).resolves.toMatchObject({
+      package: {
+        title: 'PBIS practice lab',
+        provider: 'deterministic',
+      },
+    })
+
+    const packageInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/content-studio/packages')
+    expect(packageInit.method).toBe('POST')
+    expect(packageInit.body).toBe(JSON.stringify({
+      topic: 'PBIS practice lab',
+      audience: 'Program leaders',
+      durationMinutes: 60,
+      deliveryMode: 'hybrid',
+      sourceArtifactIds: ['pbis-ppt-master'],
+    }))
+    expect((packageInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 })
 

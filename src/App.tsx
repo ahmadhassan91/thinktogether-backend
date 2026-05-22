@@ -9,6 +9,7 @@ import {
   createAiDeckOutline,
   createAdminCohort,
   createAdminLearner,
+  createContentStudioPackage,
   createLearnerInvite,
   downloadAiDeckPptx,
   downloadAdminExport,
@@ -16,6 +17,7 @@ import {
   getAdminAuditEvents,
   getAdminCohorts,
   getAdminLearners,
+  getAdminSupervisorReport,
   getAiProviders,
   getLearningPath,
   getMe,
@@ -37,12 +39,14 @@ import {
   type AiDeckProvider,
   type AiProviderStatus,
   type AuthUser,
+  type ContentStudioPackage,
   type LearningPathPayload,
   type LearnerProfile,
   type SourceLibraryPayload,
   type SourceQaFlagsPayload,
   type SourceSearchPayload,
   type SourceUsageSummaryPayload,
+  type SupervisorReportPayload,
   type ProgressPayload,
 } from './api/client'
 import { StatusChip } from './components/StatusChip'
@@ -54,7 +58,7 @@ import { LearnerFlow } from './features/learner/LearnerFlow'
 import type { Learner, LearnerModule } from './features/learner/learnerProgress'
 import thinkTogetherLogo from './assets/think-together-logo.png'
 
-type WorkspaceView = 'learner' | 'practice' | 'assist' | 'admin' | 'users' | 'cohorts' | 'deck' | 'plan'
+type WorkspaceView = 'learner' | 'practice' | 'assist' | 'admin' | 'users' | 'cohorts' | 'deck' | 'reporting' | 'plan'
 
 const navItems: Array<{ view: WorkspaceView; label: string }> = [
   { view: 'learner', label: 'Learn' },
@@ -64,8 +68,11 @@ const navItems: Array<{ view: WorkspaceView; label: string }> = [
   { view: 'users', label: 'Users' },
   { view: 'cohorts', label: 'Cohorts' },
   { view: 'deck', label: 'Decks' },
+  { view: 'reporting', label: 'Reporting' },
   { view: 'plan', label: 'Plan' },
 ]
+
+const adminOnlyViews: WorkspaceView[] = ['admin', 'users', 'cohorts', 'deck', 'reporting']
 
 function App() {
   const [view, setView] = useState<WorkspaceView>('learner')
@@ -79,6 +86,7 @@ function App() {
   const [content, setContent] = useState<LearningPathPayload | null>(null)
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
   const [dashboard, setDashboard] = useState<AdminDashboardPayload | null>(null)
+  const [supervisorReport, setSupervisorReport] = useState<SupervisorReportPayload | null>(null)
   const [adminLearners, setAdminLearners] = useState<AdminLearner[]>([])
   const [adminCohorts, setAdminCohorts] = useState<AdminCohort[]>([])
   const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>([])
@@ -95,8 +103,9 @@ function App() {
     setSourceLibrary(sourcePayload)
 
     if (currentUser.role === 'admin') {
-      const [dashboardPayload, learnersPayload, cohortsPayload, auditPayload, usagePayload, qaFlagsPayload] = await Promise.all([
+      const [dashboardPayload, supervisorReportPayload, learnersPayload, cohortsPayload, auditPayload, usagePayload, qaFlagsPayload] = await Promise.all([
         getAdminDashboard(),
+        getAdminSupervisorReport(),
         getAdminLearners(),
         getAdminCohorts(),
         getAdminAuditEvents(),
@@ -104,6 +113,7 @@ function App() {
         getSourceQaFlags(),
       ])
       setDashboard(dashboardPayload)
+      setSupervisorReport(supervisorReportPayload)
       setAdminLearners(learnersPayload.learners)
       setAdminCohorts(cohortsPayload.cohorts)
       setAdminAuditEvents(auditPayload.events)
@@ -111,6 +121,7 @@ function App() {
       setSourceQaFlags(qaFlagsPayload)
     } else {
       setDashboard(null)
+      setSupervisorReport(null)
       setAdminLearners([])
       setAdminCohorts([])
       setAdminAuditEvents([])
@@ -142,7 +153,7 @@ function App() {
   const learnerModules = useMemo(() => (content ? toLearnerModules(content) : []), [content])
   const coachScenario = useMemo(() => (content ? toCoachScenario(content) : null), [content])
 
-  const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => !['admin', 'users', 'cohorts', 'deck'].includes(item.view))
+  const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => !adminOnlyViews.includes(item.view))
   const activeViewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -170,6 +181,7 @@ function App() {
     setContent(null)
     setProgress(null)
     setDashboard(null)
+    setSupervisorReport(null)
     setAdminLearners([])
     setAdminCohorts([])
     setAdminAuditEvents([])
@@ -284,7 +296,7 @@ function App() {
               className="app-sidebar__nav-button"
               data-active={view === item.view}
               key={item.view}
-              onClick={() => setView(['admin', 'users', 'cohorts', 'deck'].includes(item.view) && user.role !== 'admin' ? 'learner' : item.view)}
+              onClick={() => setView(adminOnlyViews.includes(item.view) && user.role !== 'admin' ? 'learner' : item.view)}
               type="button"
             >
               {item.label}
@@ -313,85 +325,104 @@ function App() {
           </div>
         </header>
 
-        <div className="app-content">
-          {renderView({
-          view,
-          learnerModules,
-          coachScenario,
-          progress,
-          dashboard,
-          adminLearners,
-          adminCohorts,
-          adminAuditEvents,
-          learner: learner ?? toLearnerIdentity(user),
-          isAdmin: user.role === 'admin',
-          contentVersion: content.path.contentVersion,
-          sourceLibrary,
-          sourceUsageSummary,
-          sourceQaFlags,
-          onCompleteModule: async (moduleId) => {
-            await completeModule(moduleId)
-            setProgress(await getProgress())
-            if (user.role === 'admin') {
-              setDashboard(await getAdminDashboard())
-            }
-          },
-          onAnswerKnowledgeCheck: async (moduleId, answer) => {
-            const moduleItem = content.modules.find((item) => item.id === moduleId)
-            const itemId = moduleItem?.knowledgeCheckItemIds[0]
-            if (itemId) {
-              await answerKnowledgeCheck(itemId, answer)
-            }
-          },
-          onCreateLearner: async (learner) => {
-            await createAdminLearner(learner)
-            const [learnersPayload, dashboardPayload, auditPayload] = await Promise.all([
-              getAdminLearners(),
-              getAdminDashboard(),
-              getAdminAuditEvents(),
-            ])
-            setAdminLearners(learnersPayload.learners)
-            setDashboard(dashboardPayload)
-            setAdminAuditEvents(auditPayload.events)
-          },
-          onCreateCohort: async (cohort) => {
-            await createAdminCohort(cohort)
-            const [cohortsPayload, dashboardPayload, auditPayload] = await Promise.all([
-              getAdminCohorts(),
-              getAdminDashboard(),
-              getAdminAuditEvents(),
-            ])
-            setAdminCohorts(cohortsPayload.cohorts)
-            setDashboard(dashboardPayload)
-            setAdminAuditEvents(auditPayload.events)
-          },
-          onCreateLearnerInvite: async (learnerId) => {
-            const invitePayload = await createLearnerInvite(learnerId)
-            setAdminAuditEvents((await getAdminAuditEvents()).events)
-            if (invitePayload.learner) {
-              setAdminLearners((items) => items.map((item) => (item.id === learnerId ? invitePayload.learner! : item)))
-            } else if (invitePayload.invite?.inviteStatus) {
-              setAdminLearners((items) =>
-                items.map((item) =>
-                  item.id === learnerId ? { ...item, inviteStatus: invitePayload.invite.inviteStatus } : item,
-                ),
-              )
-            }
-            return invitePayload.invite
-          },
-          onRevokeLearnerInvite: async (learnerId) => {
-            const revokePayload = await revokeLearnerInvite(learnerId)
-            setAdminLearners((items) => items.map((item) => (item.id === learnerId ? revokePayload.learner : item)))
-            setAdminAuditEvents((await getAdminAuditEvents()).events)
-          },
-          onDownloadExport: downloadAdminExport,
-          onSubmitSurvey: async (score, notes) => {
-            await submitTrainingSurvey({ pathId: content.path.id, score, notes })
-            if (user.role === 'admin') {
-              setDashboard(await getAdminDashboard())
-            }
-          },
-          })}
+        <div className="workspace-body">
+          <div className="app-content">
+            <WorkspaceHelper view={view} isAdmin={user.role === 'admin'} />
+            {renderView({
+            view,
+            learnerModules,
+            coachScenario,
+            progress,
+            dashboard,
+            supervisorReport,
+            adminLearners,
+            adminCohorts,
+            adminAuditEvents,
+            learner: learner ?? toLearnerIdentity(user),
+            isAdmin: user.role === 'admin',
+            contentVersion: content.path.contentVersion,
+            sourceLibrary,
+            sourceUsageSummary,
+            sourceQaFlags,
+            onCompleteModule: async (moduleId) => {
+              await completeModule(moduleId)
+              setProgress(await getProgress())
+              if (user.role === 'admin') {
+                const [dashboardPayload, supervisorReportPayload] = await Promise.all([
+                  getAdminDashboard(),
+                  getAdminSupervisorReport(),
+                ])
+                setDashboard(dashboardPayload)
+                setSupervisorReport(supervisorReportPayload)
+              }
+            },
+            onAnswerKnowledgeCheck: async (moduleId, answer) => {
+              const moduleItem = content.modules.find((item) => item.id === moduleId)
+              const itemId = moduleItem?.knowledgeCheckItemIds[0]
+              if (itemId) {
+                await answerKnowledgeCheck(itemId, answer)
+              }
+            },
+            onCreateLearner: async (learner) => {
+              await createAdminLearner(learner)
+              const [learnersPayload, dashboardPayload, supervisorReportPayload, auditPayload] = await Promise.all([
+                getAdminLearners(),
+                getAdminDashboard(),
+                getAdminSupervisorReport(),
+                getAdminAuditEvents(),
+              ])
+              setAdminLearners(learnersPayload.learners)
+              setDashboard(dashboardPayload)
+              setSupervisorReport(supervisorReportPayload)
+              setAdminAuditEvents(auditPayload.events)
+            },
+            onCreateCohort: async (cohort) => {
+              await createAdminCohort(cohort)
+              const [cohortsPayload, dashboardPayload, supervisorReportPayload, auditPayload] = await Promise.all([
+                getAdminCohorts(),
+                getAdminDashboard(),
+                getAdminSupervisorReport(),
+                getAdminAuditEvents(),
+              ])
+              setAdminCohorts(cohortsPayload.cohorts)
+              setDashboard(dashboardPayload)
+              setSupervisorReport(supervisorReportPayload)
+              setAdminAuditEvents(auditPayload.events)
+            },
+            onCreateLearnerInvite: async (learnerId) => {
+              const invitePayload = await createLearnerInvite(learnerId)
+              setAdminAuditEvents((await getAdminAuditEvents()).events)
+              if (invitePayload.learner) {
+                setAdminLearners((items) => items.map((item) => (item.id === learnerId ? invitePayload.learner! : item)))
+              } else if (invitePayload.invite?.inviteStatus) {
+                setAdminLearners((items) =>
+                  items.map((item) =>
+                    item.id === learnerId ? { ...item, inviteStatus: invitePayload.invite.inviteStatus } : item,
+                  ),
+                )
+              }
+              return invitePayload.invite
+            },
+            onRevokeLearnerInvite: async (learnerId) => {
+              const revokePayload = await revokeLearnerInvite(learnerId)
+              setAdminLearners((items) => items.map((item) => (item.id === learnerId ? revokePayload.learner : item)))
+              setAdminAuditEvents((await getAdminAuditEvents()).events)
+            },
+            onDownloadExport: downloadAdminExport,
+            onSubmitSurvey: async (score, notes) => {
+              await submitTrainingSurvey({ pathId: content.path.id, score, notes })
+              if (user.role === 'admin') {
+                const [dashboardPayload, supervisorReportPayload] = await Promise.all([
+                  getAdminDashboard(),
+                  getAdminSupervisorReport(),
+                ])
+                setDashboard(dashboardPayload)
+                setSupervisorReport(supervisorReportPayload)
+              }
+            },
+            })}
+          </div>
+          {user.role === 'admin' ? <SandboxReviewerPanel view={view} /> : null}
         </div>
       </main>
     </div>
@@ -404,6 +435,7 @@ function renderView({
   coachScenario,
   progress,
   dashboard,
+  supervisorReport,
   adminLearners,
   adminCohorts,
   adminAuditEvents,
@@ -427,6 +459,7 @@ function renderView({
   coachScenario: CoachScenario
   progress: ProgressPayload
   dashboard: AdminDashboardPayload | null
+  supervisorReport: SupervisorReportPayload | null
   adminLearners: AdminLearner[]
   adminCohorts: AdminCohort[]
   adminAuditEvents: AdminAuditEvent[]
@@ -474,6 +507,10 @@ function renderView({
     return <DeckStudio />
   }
 
+  if (view === 'reporting' && isAdmin) {
+    return <SupervisorReportingPanel dashboard={dashboard} supervisorReport={supervisorReport} learners={adminLearners} cohorts={adminCohorts} />
+  }
+
   if (view === 'plan') {
     return (
       <MilestonePlan
@@ -496,6 +533,172 @@ function renderView({
       onAnswerKnowledgeCheck={onAnswerKnowledgeCheck}
       surveyPanel={<TrainingSurveyPanel onSubmitSurvey={onSubmitSurvey} />}
     />
+  )
+}
+
+function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: boolean }) {
+  if (!isAdmin || !['users', 'cohorts', 'deck', 'reporting'].includes(view)) return null
+
+  const copy: Record<string, { label: string; title: string; body: string }> = {
+    users: {
+      label: 'Admin helper',
+      title: 'Add learners, assign cohorts, then issue invites.',
+      body: 'Use the roster filters to find invite exceptions and missing assignments before exporting clearance data.',
+    },
+    cohorts: {
+      label: 'Admin helper',
+      title: 'Create the training session in plain language.',
+      body: 'Pick the learning path and primary facilitator from friendly lists; the MVP keeps the backend IDs behind the scenes.',
+    },
+    deck: {
+      label: 'Deck helper',
+      title: 'Generate a draft, then keep a human review gate.',
+      body: 'Deck exports are source-grounded starting points for Program Pros, not automatic policy or LMS updates.',
+    },
+    reporting: {
+      label: 'Supervisor view',
+      title: 'Reporting is visible for MVP review.',
+      body: 'Current dashboard data is summarized here while richer supervisor drilldowns and scheduled exports come next.',
+    },
+  }
+  const helper = copy[view]
+
+  return (
+    <aside className="workspace-helper" aria-label={`${helper.title} guidance`}>
+      <p className="app-hero__label">{helper.label}</p>
+      <strong>{helper.title}</strong>
+      <span>{helper.body}</span>
+    </aside>
+  )
+}
+
+function SandboxReviewerPanel({ view }: { view: WorkspaceView }) {
+  const [notes, setNotes] = useState('')
+  const viewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
+
+  return (
+    <aside className="sandbox-reviewer" aria-labelledby="sandbox-reviewer-title">
+      <div>
+        <p className="app-hero__label">Sandbox review</p>
+        <h2 id="sandbox-reviewer-title">Reviewer notes</h2>
+        <p>
+          Capture what feels unclear, missing, or demo-ready while moving through {viewLabel}.
+        </p>
+      </div>
+      <label>
+        Notes for follow-up
+        <textarea
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Example: Cohort labels are clear, but supervisor export needs owner/date."
+          value={notes}
+        />
+      </label>
+      <div className="sandbox-reviewer__prompts" aria-label="Review prompts">
+        <span>Could a regional supervisor read this without training?</span>
+        <span>Is any ID, status, or export boundary unclear?</span>
+        <span>What should be promoted before pilot handoff?</span>
+      </div>
+    </aside>
+  )
+}
+
+function SupervisorReportingPanel({
+  dashboard,
+  supervisorReport,
+  learners,
+  cohorts,
+}: {
+  dashboard: AdminDashboardPayload | null
+  supervisorReport: SupervisorReportPayload | null
+  learners: AdminLearner[]
+  cohorts: AdminCohort[]
+}) {
+  const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
+  const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
+  const notificationPreviews = supervisorReport?.completionNotifications ?? []
+  const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
+  const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
+
+  return (
+    <main className="reporting-view" aria-labelledby="reporting-title">
+      <header>
+        <p className="app-hero__label">Supervisor and Reporting</p>
+        <h1 id="reporting-title">Supervisor Reporting</h1>
+        <p>
+          MVP reporting uses the admin dashboard feed already available in the client. Phase 2 adds supervisor drilldowns,
+          recurring exports, and region-owner routing.
+        </p>
+      </header>
+
+      {dashboard ? (
+        <>
+          <section className="reporting-view__metrics" aria-label="Supervisor reporting metrics">
+            <span><strong>{dashboard.kpis.totalLearners}</strong> learners</span>
+            <span><strong>{dashboard.kpis.clearanceReady}</strong> clearance-ready</span>
+            <span><strong>{dashboard.kpis.makeupRequired}</strong> need makeup</span>
+            <span><strong>{dashboard.kpis.facilitatorRating.toFixed(1)}</strong> facilitator rating</span>
+          </section>
+          <section className="reporting-view__grid">
+            <article>
+              <h2>Supervisor snapshot</h2>
+              <dl>
+                <div><dt>Cohorts in scope</dt><dd>{cohorts.length || dashboard.cohorts.length}</dd></div>
+                <div><dt>Pending invites</dt><dd>{pendingInvites}</dd></div>
+                <div><dt>Missing cohort</dt><dd>{missingCohorts}</dd></div>
+                <div><dt>Supervisor groups</dt><dd>{supervisorGroups.length}</dd></div>
+              </dl>
+            </article>
+            <article>
+              <h2>Completion notifications</h2>
+              {notificationPreviews.length ? (
+                <ul>
+                  {notificationPreviews.slice(0, 3).map((item) => (
+                    <li key={`${item.learnerId}-${item.pathId}`}>
+                      {item.preview}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No completion notifications are waiting. Completed learners will appear here for supervisor follow-up.</p>
+              )}
+            </article>
+          </section>
+          {supervisorGroups.length || facilitatorGroups.length ? (
+            <section className="reporting-view__table" aria-labelledby="supervisor-groups-title">
+              <h2 id="supervisor-groups-title">Supervisor and facilitator drilldown</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Group</th>
+                    <th>Learners</th>
+                    <th>Avg progress</th>
+                    <th>Completion rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...supervisorGroups, ...facilitatorGroups].slice(0, 8).map((group) => (
+                    <tr key={group.id}>
+                      <td>{group.label}</td>
+                      <td>{group.learnerCount}</td>
+                      <td>{group.averageProgressPercent}%</td>
+                      <td>{group.completionRate}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <section className="reporting-view__coming-next">
+          <h2>MVP coming next</h2>
+          <p>
+            Supervisor reporting will activate when dashboard data is loaded. The MVP boundary is clear:
+            CSV/XLSX export first, no direct ADP or LMS writeback.
+          </p>
+        </section>
+      )}
+    </main>
   )
 }
 
@@ -609,8 +812,10 @@ function DeckStudio() {
   const [durationMinutes, setDurationMinutes] = useState(45)
   const [slideCount, setSlideCount] = useState(6)
   const [outline, setOutline] = useState<AiDeckOutline | null>(null)
+  const [contentPackage, setContentPackage] = useState<ContentStudioPackage | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isDownloadingPptx, setIsDownloadingPptx] = useState(false)
+  const [isGeneratingPackage, setIsGeneratingPackage] = useState(false)
   const [deckError, setDeckError] = useState('')
 
   const deckProviders = useMemo(
@@ -654,6 +859,26 @@ function DeckStudio() {
       setDeckError(error instanceof Error ? error.message : 'Unable to generate PowerPoint.')
     } finally {
       setIsDownloadingPptx(false)
+    }
+  }
+
+  const handleGenerateContentPackage = async () => {
+    setDeckError('')
+    setIsGeneratingPackage(true)
+    try {
+      const payload = await createContentStudioPackage({
+        provider: effectiveProvider,
+        topic,
+        audience,
+        durationMinutes,
+        deliveryMode: 'in-person',
+        sourceArtifactIds: outline?.sourceArtifacts,
+      })
+      setContentPackage(payload.package)
+    } catch (error) {
+      setDeckError(error instanceof Error ? error.message : 'Unable to generate training package.')
+    } finally {
+      setIsGeneratingPackage(false)
     }
   }
 
@@ -717,6 +942,14 @@ function DeckStudio() {
                 >
                   {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
                 </button>
+                <button
+                  className="button-secondary"
+                  disabled={isGeneratingPackage || topic.length < 8}
+                  onClick={handleGenerateContentPackage}
+                  type="button"
+                >
+                  {isGeneratingPackage ? 'Building content package' : 'Generate full package'}
+                </button>
               </div>
               {deckError ? <p role="alert">{deckError}</p> : null}
             </form>
@@ -759,6 +992,52 @@ function DeckStudio() {
             <div className="source-list">
               {outline.sourceArtifacts.map((artifact) => <span key={artifact}>{artifact}</span>)}
             </div>
+          </section>
+        ) : null}
+        {contentPackage ? (
+          <section className="content-package" aria-labelledby="content-package-title">
+            <div>
+              <p className="app-hero__label">{contentPackage.provider} · {contentPackage.model}</p>
+              <h2 id="content-package-title">{contentPackage.title}</h2>
+              <p>
+                Full training package for {contentPackage.audience}: deck sections, knowledge checks, practice lab,
+                facilitator notes, learner handout, and in-person/virtual delivery guidance.
+              </p>
+            </div>
+            <div className="content-package__grid">
+              <article>
+                <h3>Objectives</h3>
+                <ul>
+                  {contentPackage.learningObjectives.map((objective) => <li key={objective}>{objective}</li>)}
+                </ul>
+              </article>
+              <article>
+                <h3>Knowledge checks</h3>
+                <ol>
+                  {contentPackage.knowledgeCheckQuestions.map((question) => (
+                    <li key={question.question}>{question.question}</li>
+                  ))}
+                </ol>
+              </article>
+              <article>
+                <h3>Practice lab</h3>
+                <strong>{contentPackage.practiceActivity.title}</strong>
+                <p>{contentPackage.practiceActivity.facilitatorPrompt}</p>
+              </article>
+              <article>
+                <h3>Learner handout</h3>
+                <p>{contentPackage.learnerHandout.summary}</p>
+              </article>
+            </div>
+            <ol className="content-package__sections">
+              {contentPackage.deckOutline.map((section) => (
+                <li key={section.sectionTitle}>
+                  <strong>{section.sectionTitle}</strong>
+                  <span>{section.objective}</span>
+                  <em>{section.activityPrompt}</em>
+                </li>
+              ))}
+            </ol>
           </section>
         ) : null}
       </section>

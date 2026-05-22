@@ -4,7 +4,9 @@ import {
   canCompletePath,
   completeModule,
   createCompletionRecord,
+  getFinalKnowledgeCheckItems,
   getNextModuleId,
+  scoreFinalKnowledgeCheck,
   type Learner,
   type LearnerModule,
   type LearnerProgress,
@@ -121,7 +123,49 @@ describe('learner flow helpers', () => {
     expect(canCompletePath(modules, progress)).toBe(true)
   })
 
+  it('collects final knowledge-check items after required modules', () => {
+    expect(getFinalKnowledgeCheckItems(modules)).toEqual([
+      {
+        moduleId: 'overview',
+        moduleTitle: 'PBIS Overview',
+        prompt: 'What is the purpose of PBIS?',
+        choices: ['Consistent support', 'Longer paperwork'],
+        correctAnswer: 'Consistent support',
+        explanation: 'PBIS focuses staff on teaching and reinforcing expectations.',
+      },
+    ])
+  })
+
+  it('scores the final knowledge check independently of module completion', () => {
+    const result = scoreFinalKnowledgeCheck({
+      items: getFinalKnowledgeCheckItems(modules),
+      answers: [{ moduleId: 'overview', answer: 'Longer paperwork' }],
+      answeredAt: '2026-05-08T10:45:00.000Z',
+    })
+
+    expect(result).toMatchObject({
+      score: 0,
+      correctCount: 0,
+      totalCount: 1,
+      passFail: 'needs-review',
+      attempts: [
+        {
+          moduleId: 'overview',
+          answer: 'Longer paperwork',
+          correct: false,
+          feedback: 'PBIS focuses staff on teaching and reinforcing expectations.',
+          answeredAt: '2026-05-08T10:45:00.000Z',
+        },
+      ],
+    })
+  })
+
   it('creates a completion record with learner identity, score, and content version', () => {
+    const assessmentResult = scoreFinalKnowledgeCheck({
+      items: getFinalKnowledgeCheckItems(modules),
+      answers: [{ moduleId: 'overview', answer: 'Consistent support' }],
+      answeredAt: '2026-05-08T10:45:00.000Z',
+    })
     const record = createCompletionRecord({
       learner,
       pathId: 'pbis-path',
@@ -132,6 +176,7 @@ describe('learner flow helpers', () => {
         { moduleId: 'overview', status: 'complete', attempts: [{ correct: true, answer: 'Consistent support' }] },
         { moduleId: 'practice', status: 'complete', attempts: [{ correct: true, answer: 'Use a calm redirect.' }] },
       ],
+      assessmentResult,
       completedAt: '2026-05-08T11:00:00.000Z',
     })
 
@@ -144,6 +189,12 @@ describe('learner flow helpers', () => {
       completedAt: '2026-05-08T11:00:00.000Z',
       score: 100,
       passFail: 'pass',
+      finalKnowledgeCheck: {
+        score: 100,
+        correctCount: 1,
+        totalCount: 1,
+        passFail: 'pass',
+      },
       moduleStatuses: [
         { moduleId: 'overview', status: 'complete' },
         { moduleId: 'practice', status: 'complete' },

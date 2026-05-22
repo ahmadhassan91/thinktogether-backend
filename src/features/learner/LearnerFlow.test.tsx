@@ -53,19 +53,30 @@ describe('LearnerFlow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /verify and start/i }))
 
-    expect(screen.getByText('Progress: 0 of 2 required modules complete')).toBeInTheDocument()
-    expect(screen.getByText(/Current/)).toBeInTheDocument()
-    expect(screen.getByText(/Locked/)).toBeInTheDocument()
+    expect(screen.getByText(/Course modules: 0 of 2 complete/i)).toBeInTheDocument()
+    expect(screen.getByText('Step 1: Lessons & practice')).toBeInTheDocument()
+    expect(screen.getByText('Step 2: Final knowledge check')).toBeInTheDocument()
+    expect(screen.getByText(/Locked until modules complete/i)).toBeInTheDocument()
+    expect(screen.getByText('Current')).toBeInTheDocument()
+    expect(screen.getByText('Locked')).toBeInTheDocument()
+    expect(screen.queryByText(/What is the purpose of PBIS/i)).not.toBeInTheDocument()
   })
 
-  it('submits a quiz, advances to practice, and shows a completion receipt', async () => {
-    render(<LearnerFlow learner={learner} modules={modules} pathTitle="Program Induction - PBIS" />)
+  it('presents lessons and practice before final knowledge check, survey, and receipt', async () => {
+    render(
+      <LearnerFlow
+        learner={learner}
+        modules={modules}
+        pathTitle="Program Induction - PBIS"
+        surveyPanel={<section aria-label="Training survey">Training survey</section>}
+      />,
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /verify and start/i }))
-    fireEvent.click(screen.getByLabelText('Consistent support'))
-    fireEvent.click(screen.getByRole('button', { name: /submit answer/i }))
+    expect(screen.getByText(/Knowledge check queued for later/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /mark lesson complete/i }))
 
-    expect(await screen.findByText(/1 of 2 required modules complete/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Course modules: 1 of 2 complete/i)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /pre-corrective phrases/i })).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(/practice response/i), {
@@ -73,12 +84,23 @@ describe('LearnerFlow', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /submit practice/i }))
 
+    expect(await screen.findByRole('heading', { name: /final knowledge check/i })).toBeInTheDocument()
+    expect(screen.getByText(/All required lessons and practice are complete/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Consistent support'))
+    fireEvent.click(screen.getByRole('button', { name: /submit final knowledge check/i }))
+
+    expect(await screen.findByRole('heading', { name: /survey and commitment/i })).toBeInTheDocument()
+    expect(screen.getByText(/Final score: 100%/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /training survey/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText(/I will use the PBIS practices/i))
+    fireEvent.click(screen.getByRole('button', { name: /record completion/i }))
+
     expect(await screen.findByRole('heading', { name: /completion receipt/i })).toBeInTheDocument()
     expect(screen.getByText(/Score: 100%/)).toBeInTheDocument()
     expect(screen.getByText(/Confirmation:/)).toBeInTheDocument()
   })
 
-  it('does not persist module completion for an incorrect quiz answer', async () => {
+  it('persists knowledge-check answers only after modules are complete', async () => {
     const onAnswerKnowledgeCheck = vi.fn().mockResolvedValue(undefined)
     const onCompleteModule = vi.fn().mockResolvedValue(undefined)
 
@@ -92,11 +114,23 @@ describe('LearnerFlow', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: /verify and start/i }))
-    fireEvent.click(screen.getByLabelText('Surprise consequences'))
-    fireEvent.click(screen.getByRole('button', { name: /submit answer/i }))
+    fireEvent.click(screen.getByRole('button', { name: /mark lesson complete/i }))
 
-    expect(await screen.findByText(/needs review/i)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /pre-corrective phrases/i })).toBeInTheDocument()
+    expect(onCompleteModule).toHaveBeenCalledWith('overview')
+    expect(onAnswerKnowledgeCheck).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText(/practice response/i), {
+      target: { value: 'Use walking feet and keep hands to yourself.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /submit practice/i }))
+
+    expect(await screen.findByRole('heading', { name: /final knowledge check/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Surprise consequences'))
+    fireEvent.click(screen.getByRole('button', { name: /submit final knowledge check/i }))
+
+    expect(await screen.findByText(/Status:/i)).toHaveTextContent(/needs review/i)
     expect(onAnswerKnowledgeCheck).toHaveBeenCalledWith('overview', 'Surprise consequences')
-    expect(onCompleteModule).not.toHaveBeenCalled()
+    expect(onCompleteModule).toHaveBeenCalledWith('phrases')
   })
 })

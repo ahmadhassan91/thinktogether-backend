@@ -133,7 +133,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
   })
 
-  it('switches between learner, coach, admin, users, cohorts, deck, and plan views', async () => {
+  it('switches between learner, coach, admin, users, cohorts, deck, reporting, and plan views', async () => {
     render(<App />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Practice' }))
@@ -153,13 +153,18 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate preview' }))
     expect(await screen.findByRole('heading', { name: 'Effective Lesson Delivery' })).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole('button', { name: 'Reporting' }))
+    expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Supervisor reporting metrics')).toHaveTextContent('clearance-ready')
+
     fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
     expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Training Deck Studio' })).not.toBeInTheDocument()
   })
 
   it('uses learner profile from getMe and skips admin calls for learner users', async () => {
-    const fetchMock = vi.fn(async (path: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (path: RequestInfo | URL, init?: RequestInit) => {
+      void init
       const url = String(path)
       if (url.endsWith('/api/me')) {
         return json({
@@ -199,6 +204,149 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(fetchMock.mock.calls.map(([path]) => String(path)).some((url) => url.includes('/api/admin/'))).toBe(false)
+    })
+  })
+
+  it('shows learner-facing Program Pro feedback copy and submits the training survey', async () => {
+    const fetchMock = vi.fn(async (path: RequestInfo | URL) => {
+      const url = String(path)
+      if (url.endsWith('/api/me')) {
+        return json({
+          user: { id: 'user-learner-1', email: 'maya@example.org', name: 'Maya Rivera', role: 'learner' },
+          learner: {
+            id: 'learner-1',
+            firstName: 'Maya',
+            lastName: 'Rivera',
+            email: 'maya@example.org',
+            region: 'South',
+            title: 'Program Leader',
+            site: 'Maple Site',
+          },
+        })
+      }
+      if (url.includes('/api/learning-paths/')) {
+        return json({
+          path: {
+            id: 'program-induction-pbis',
+            title: 'Program Induction - PBIS',
+            audience: 'Program Leaders',
+            contentVersion: 'pbis-mvp-test',
+            sourceRefs: [],
+          },
+          modules: [
+            {
+              id: 'overview',
+              title: 'PBIS Overview',
+              order: 1,
+              estimatedMinutes: 4,
+              requiredForCompletion: true,
+              content: {
+                summary: 'PBIS keeps expectations teachable and observable.',
+                keyPoints: ['Use positive framing.'],
+              },
+              knowledgeCheckItemIds: ['kc-overview'],
+            },
+            {
+              id: 'practice',
+              title: 'Practice Routines',
+              order: 2,
+              estimatedMinutes: 5,
+              requiredForCompletion: true,
+              content: {
+                summary: 'Practice makes site routines consistent.',
+                keyPoints: ['Keep it brief.'],
+              },
+              knowledgeCheckItemIds: [],
+            },
+          ],
+          knowledgeChecks: [
+            {
+              id: 'kc-overview',
+              moduleId: 'overview',
+              prompt: 'What should PBIS directions be?',
+              choices: ['Start with one observable direction', 'Wait until behavior escalates'],
+              correctAnswer: 'Start with one observable direction',
+              rationale: 'Observable directions are easier to teach and reinforce.',
+            },
+          ],
+          scenarios: [
+            {
+              id: 'scenario-1',
+              title: 'Line Transition',
+              prompt: 'A learner needs support during line-up.',
+            },
+          ],
+        })
+      }
+      if (url.endsWith('/api/progress')) {
+        return json({ completedModuleIds: [], progress: [], practiceSubmissions: [] })
+      }
+      if (url.includes('/api/knowledge-checks/')) {
+        return json({ correct: true, correctAnswer: 'Start with one observable direction', rationale: 'Correct.' })
+      }
+      if (url.endsWith('/api/progress/module-complete')) {
+        return json({ moduleId: 'overview', status: 'completed', completedAt: '2026-05-09T00:00:00.000Z' })
+      }
+      if (url.endsWith('/api/source-library')) {
+        return json({ sourceLibraryVersion: 'test', artifacts: [], learningPaths: [] })
+      }
+      if (url.endsWith('/api/surveys/training')) {
+        return json({
+          survey: {
+            id: 'survey-1',
+            learnerId: 'learner-1',
+            facilitatorId: 'facilitator-1',
+            pathId: 'program-induction-pbis',
+            rating: 'ready',
+            score: 5,
+            notes: 'Program Pro connected the practice to my site.',
+            surveySubmitted: true,
+            submittedAt: '2026-05-09T00:00:00.000Z',
+          },
+        })
+      }
+      return json({})
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Verify and start' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark lesson complete' }))
+    expect(await screen.findByRole('heading', { name: 'Practice Routines' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Practice response'), {
+      target: { value: 'Use walking feet and keep hands to yourself.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit practice' }))
+
+    expect(await screen.findByRole('heading', { name: 'Final Knowledge Check' })).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Start with one observable direction'))
+    fireEvent.click(screen.getByRole('button', { name: 'Submit final knowledge check' }))
+
+    expect(await screen.findByRole('heading', { name: 'Survey and Commitment' })).toBeInTheDocument()
+    expect(screen.getByRole('form', { name: 'Training survey' })).toBeInTheDocument()
+    expect(screen.getByText('Facilitator/session rating')).toBeInTheDocument()
+    expect(screen.getByText('Feedback for Program Pros')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Feedback for Program Pros'), {
+      target: { value: 'Program Pro connected the practice to my site.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit survey' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Survey submitted. Thank you for helping improve weekly training delivery.',
+    )
+    const surveyCall = fetchMock.mock.calls.find(([calledPath]) =>
+      String(calledPath).endsWith('/api/surveys/training'),
+    ) as [RequestInfo | URL, RequestInit?] | undefined
+    expect(surveyCall?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        pathId: 'program-induction-pbis',
+        score: 5,
+        notes: 'Program Pro connected the practice to my site.',
+      }),
     })
   })
 

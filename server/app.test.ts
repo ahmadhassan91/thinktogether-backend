@@ -1,7 +1,9 @@
 import request from 'supertest';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it as baseIt, vi } from 'vitest';
 import { createApp, type AppHandle } from './app';
 import { hashToken } from './auth';
+
+const it = baseIt.sequential;
 
 const seed = {
   adminEmail: 'admin@thinktogether.local',
@@ -18,7 +20,7 @@ async function boot() {
   });
 }
 
-describe('Think Together training API', () => {
+describe.sequential('Think Together training API', () => {
   let handle: AppHandle | undefined;
 
   afterEach(async () => {
@@ -30,12 +32,14 @@ describe('Think Together training API', () => {
     handle = await boot();
 
     await request(handle.app).get('/api/admin/dashboard').expect(401);
+    await request(handle.app).get('/api/admin/supervisor-report').expect(401);
     await request(handle.app).get('/api/admin/learners').expect(401);
     await request(handle.app).post('/api/admin/learners').send({}).expect(401);
     await request(handle.app).get('/api/admin/cohorts').expect(401);
     await request(handle.app).post('/api/admin/cohorts').send({}).expect(401);
     await request(handle.app).get('/api/admin/audit-events').expect(401);
     await request(handle.app).get('/api/admin/source-intelligence/summary').expect(401);
+    await request(handle.app).post('/api/content-studio/packages').send({}).expect(401);
     await request(handle.app).post('/api/surveys/training').send({}).expect(401);
 
     const login = await request(handle.app)
@@ -340,6 +344,10 @@ describe('Think Together training API', () => {
       .set('Authorization', `Bearer ${accepted.body.token}`)
       .expect(403);
     await request(handle.app)
+      .get('/api/admin/supervisor-report')
+      .set('Authorization', `Bearer ${accepted.body.token}`)
+      .expect(403);
+    await request(handle.app)
       .post('/api/admin/learners/learner-1/invite')
       .set('Authorization', `Bearer ${accepted.body.token}`)
       .expect(403);
@@ -529,6 +537,129 @@ describe('Think Together training API', () => {
     expect(completionExport.text).toContain('generated_at,content_version,learner_id');
     expect(completionExport.text).toContain('learner-1');
     expect(completionExport.text).toContain('PBIS-learner-1-');
+  });
+
+  it('reports learner progress grouped by supervisor, facilitator, and cohort with completion notifications', async () => {
+    handle = await boot();
+    const adminToken = await loginToken(handle);
+    await handle.db.query(
+      `UPDATE learners
+       SET supervisor = $1, title = $2, site = $3
+       WHERE id = $4`,
+      ['Regional Supervisor A', 'Program Leader', 'East Bay Site', 'learner-1'],
+    );
+
+    const invite = await request(handle.app)
+      .post('/api/admin/learners/learner-1/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    const accepted = await request(handle.app)
+      .post('/api/auth/accept-invite')
+      .send({ token: invite.body.invite.inviteToken, password: 'LearnerPass!2026' })
+      .expect(201);
+
+    const path = await request(handle.app)
+      .get('/api/learning-paths/program-induction-pbis')
+      .set('Authorization', `Bearer ${accepted.body.token}`)
+      .expect(200);
+    const requiredModules = path.body.modules.filter((module: { requiredForCompletion: boolean }) => module.requiredForCompletion);
+    const firstKnowledgeCheck = path.body.knowledgeChecks[0];
+
+    await request(handle.app)
+      .post(`/api/knowledge-checks/${firstKnowledgeCheck.id}/answer`)
+      .set('Authorization', `Bearer ${accepted.body.token}`)
+      .send({ selectedAnswer: firstKnowledgeCheck.correctAnswer })
+      .expect(200);
+
+    for (const module of requiredModules) {
+      await request(handle.app)
+        .post('/api/progress/module-complete')
+        .set('Authorization', `Bearer ${accepted.body.token}`)
+        .send({ moduleId: module.id })
+        .expect(200);
+    }
+
+    const report = await request(handle.app)
+      .get('/api/admin/supervisor-report')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(report.body.groups.supervisors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'Regional Supervisor A',
+          label: 'Regional Supervisor A',
+          learnerCount: 1,
+          averageProgressPercent: 100,
+          completionRate: 100,
+          cohortIds: ['cohort-pbis-mvp-1'],
+          learners: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'learner-1',
+              name: 'Maya Rivera',
+              supervisor: 'Regional Supervisor A',
+              facilitatorIds: ['facilitator-1'],
+              title: 'Program Leader',
+              site: 'East Bay Site',
+              cohort: expect.objectContaining({
+                id: 'cohort-pbis-mvp-1',
+                name: 'PBIS MVP Pilot',
+              }),
+              path: expect.objectContaining({
+                id: 'program-induction-pbis',
+                title: 'Program Induction - PBIS',
+              }),
+              progressPercent: 100,
+              scores: expect.objectContaining({
+                knowledgeScore: 100,
+                completionScore: 100,
+              }),
+              completion: expect.objectContaining({
+                status: 'completed',
+                completedModuleCount: requiredModules.length,
+                requiredModuleCount: requiredModules.length,
+                passFail: 'pass',
+                exportedToLms: false,
+              }),
+            }),
+          ]),
+        }),
+      ]),
+    );
+    expect(report.body.groups.facilitators).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'facilitator-1',
+          learnerCount: 1,
+          completionRate: 100,
+        }),
+      ]),
+    );
+    expect(report.body.groups.cohorts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'cohort-pbis-mvp-1',
+          label: 'PBIS MVP Pilot',
+          averageProgressPercent: 100,
+        }),
+      ]),
+    );
+    expect(report.body.completionNotifications).toEqual([
+      expect.objectContaining({
+        learnerId: 'learner-1',
+        learnerName: 'Maya Rivera',
+        supervisor: 'Regional Supervisor A',
+        facilitatorIds: ['facilitator-1'],
+        cohortId: 'cohort-pbis-mvp-1',
+        pathId: 'program-induction-pbis',
+        completionStatus: 'completed',
+        progressPercent: 100,
+        score: 100,
+        confirmationCode: expect.stringContaining('PBIS-learner-1-'),
+        exportedToLms: false,
+        preview: 'Maya Rivera completed Program Induction - PBIS for PBIS MVP Pilot with 100% progress.',
+      }),
+    ]);
   });
 
   it('blocks learner access to paths and modules outside their assignment', async () => {
@@ -841,6 +972,76 @@ describe('Think Together training API', () => {
       if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
       else delete process.env.GEMINI_API_KEY;
       vi.unstubAllGlobals();
+    }
+  });
+
+  it('returns a deterministic Content Studio training package when no AI key is configured', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    try {
+      const response = await request(handle.app)
+        .post('/api/content-studio/packages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          topic: 'PBIS practice lab for program leaders',
+          audience: 'Program leaders',
+          durationMinutes: 60,
+          deliveryMode: 'hybrid',
+          sourceArtifactIds: ['pbis-ppt-master', 'sop-program-induction'],
+        })
+        .expect(201);
+
+      expect(response.body.package).toEqual(
+        expect.objectContaining({
+          provider: 'deterministic',
+          model: 'content-studio-fallback-v1',
+          title: 'PBIS practice lab for program leaders',
+          audience: 'Program leaders',
+          durationMinutes: 60,
+          sourceArtifacts: expect.arrayContaining(['PBIS PPT Master.pptx', 'SOP_Program Induction.pdf']),
+        }),
+      );
+      expect(response.body.package.learningObjectives).toHaveLength(3);
+      expect(response.body.package.deckOutline.length).toBeGreaterThanOrEqual(4);
+      expect(response.body.package.knowledgeCheckQuestions).toHaveLength(3);
+      expect(response.body.package.practiceActivity).toEqual(
+        expect.objectContaining({
+          title: expect.any(String),
+          successCriteria: expect.arrayContaining([expect.any(String)]),
+        }),
+      );
+      expect(response.body.package.facilitatorGuideNotes.length).toBeGreaterThanOrEqual(3);
+      expect(response.body.package.learnerHandout).toEqual(
+        expect.objectContaining({
+          summary: expect.any(String),
+          resourceList: expect.arrayContaining([
+            expect.objectContaining({
+              artifact: 'PBIS PPT Master.pptx',
+              locator: expect.any(String),
+            }),
+          ]),
+        }),
+      );
+      expect(response.body.package.deliveryNotes).toEqual(
+        expect.objectContaining({
+          inPerson: expect.arrayContaining([expect.any(String)]),
+          virtual: expect.arrayContaining([expect.any(String)]),
+        }),
+      );
+    } finally {
+      if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
+      else delete process.env.GEMINI_API_KEY;
+      if (previousOpenAiKey) process.env.OPENAI_API_KEY = previousOpenAiKey;
+      else delete process.env.OPENAI_API_KEY;
+      if (previousAnthropicKey) process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
+      else delete process.env.ANTHROPIC_API_KEY;
     }
   });
 

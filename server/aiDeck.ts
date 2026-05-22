@@ -1,5 +1,5 @@
-import { getLearningPath, trainingModules } from '../src/data/trainingData';
-import type { SourceRef } from '../src/types';
+import { getLearningPath, getTrainingSourceArtifact, trainingModules } from '../src/data/trainingData';
+import type { SourceArtifact, SourceRef } from '../src/types';
 
 export type AiDeckProvider = 'gemini' | 'openai' | 'claude';
 
@@ -53,6 +53,66 @@ export type ProviderStatus = {
   note: string;
 };
 
+export type ContentStudioDeliveryMode = 'in-person' | 'virtual' | 'hybrid';
+
+export type ContentStudioPackageRequest = {
+  provider?: AiDeckProvider;
+  topic: string;
+  audience: string;
+  durationMinutes: number;
+  deliveryMode: ContentStudioDeliveryMode;
+  sourceArtifactIds?: string[];
+};
+
+export type ContentStudioDeckSection = {
+  sectionTitle: string;
+  objective: string;
+  keyPoints: string[];
+  activityPrompt: string;
+  facilitatorNotes: string;
+  sourceRefs: SourceRef[];
+};
+
+export type ContentStudioKnowledgeCheckQuestion = {
+  question: string;
+  options: string[];
+  correctAnswer: string;
+  rationale: string;
+  sourceRefs: SourceRef[];
+};
+
+export type ContentStudioPracticeActivity = {
+  title: string;
+  instructions: string[];
+  facilitatorPrompt: string;
+  successCriteria: string[];
+  sourceRefs: SourceRef[];
+};
+
+export type ContentStudioPackage = {
+  provider: AiDeckProvider | 'deterministic';
+  model: string;
+  title: string;
+  audience: string;
+  durationMinutes: number;
+  learningObjectives: string[];
+  deckOutline: ContentStudioDeckSection[];
+  knowledgeCheckQuestions: ContentStudioKnowledgeCheckQuestion[];
+  practiceActivity: ContentStudioPracticeActivity;
+  facilitatorGuideNotes: string[];
+  learnerHandout: {
+    summary: string;
+    keyTakeaways: string[];
+    resourceList: Array<SourceRef & { title?: string }>;
+  };
+  deliveryNotes: {
+    inPerson: string[];
+    virtual: string[];
+  };
+  sourceArtifacts: string[];
+  generatedAt: string;
+};
+
 type JsonRecord = Record<string, unknown>;
 
 export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
@@ -93,6 +153,30 @@ export async function generateDeckOutline(request: DeckOutlineRequest): Promise<
   if (request.provider === 'gemini') return generateWithGemini(prompt, request);
   if (request.provider === 'openai') return generateWithOpenAi(prompt, request);
   return generateWithClaude(prompt, request);
+}
+
+export async function generateContentStudioPackage(request: ContentStudioPackageRequest): Promise<ContentStudioPackage> {
+  const provider = request.provider ?? 'openai';
+  if (!isProviderConfigured(provider)) return buildDeterministicContentStudioPackage(request);
+
+  const prompt = buildContentStudioPrompt(request);
+  try {
+    if (provider === 'gemini') {
+      const packagePayload = await generateContentPackageWithGemini(prompt);
+      return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
+    }
+    if (provider === 'openai') {
+      const packagePayload = await generateContentPackageWithOpenAi(prompt);
+      return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
+    }
+    const packagePayload = await generateContentPackageWithClaude(prompt);
+    return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('API key is not configured')) {
+      return buildDeterministicContentStudioPackage(request);
+    }
+    throw error;
+  }
 }
 
 export function buildDeckPrompt(request: DeckOutlineRequest) {
@@ -165,6 +249,87 @@ Rules:
 - Talking points should be short labels or evidence statements that can become infographic cards.
 - Return exactly ${request.slideCount} slides.
 - Return JSON only, no markdown.`;
+}
+
+export function buildContentStudioPrompt(request: ContentStudioPackageRequest) {
+  const context = contentStudioContext(request);
+  const moduleSummaries = context.modules
+    .map((moduleItem) => `- ${moduleItem.title}: ${moduleItem.content.summary} Key points: ${moduleItem.content.keyPoints.join('; ')}`)
+    .join('\n');
+
+  return `Create a Think Together Content Studio v1 training package as strict JSON only.
+
+Topic: ${request.topic}
+Audience: ${request.audience}
+Duration minutes: ${request.durationMinutes}
+Delivery mode: ${request.deliveryMode}
+
+Use only this source-grounded context:
+${moduleSummaries}
+
+Source artifacts and locators:
+${context.sourceRefs.map((ref) => `- ${ref.artifact}: ${ref.locator}`).join('\n')}
+
+Required JSON shape:
+{
+  "title": "string",
+  "audience": "string",
+  "durationMinutes": number,
+  "learningObjectives": ["2-3 concise objectives"],
+  "deckOutline": [
+    {
+      "sectionTitle": "string",
+      "objective": "string",
+      "keyPoints": ["string"],
+      "activityPrompt": "string",
+      "facilitatorNotes": "string",
+      "sourceRefs": [{"artifact": "string", "locator": "string"}]
+    }
+  ],
+  "knowledgeCheckQuestions": [
+    {
+      "question": "string",
+      "options": ["string", "string", "string"],
+      "correctAnswer": "string",
+      "rationale": "string",
+      "sourceRefs": [{"artifact": "string", "locator": "string"}]
+    }
+  ],
+  "practiceActivity": {
+    "title": "string",
+    "instructions": ["string"],
+    "facilitatorPrompt": "string",
+    "successCriteria": ["string"],
+    "sourceRefs": [{"artifact": "string", "locator": "string"}]
+  },
+  "facilitatorGuideNotes": ["string"],
+  "learnerHandout": {
+    "summary": "string",
+    "keyTakeaways": ["string"],
+    "resourceList": [{"artifact": "string", "locator": "string", "title": "string"}]
+  },
+  "deliveryNotes": {
+    "inPerson": ["string"],
+    "virtual": ["string"]
+  }
+}
+
+Rules:
+- Return exactly 2-3 learningObjectives.
+- Include 4-6 deckOutline sections.
+- Include exactly 3 knowledgeCheckQuestions with three options each.
+- Include one application/practice activity suitable for program staff.
+- Include facilitator guide notes and learner handout resources.
+- Include both in-person and virtual delivery notes, even for hybrid delivery.
+- Preserve human facilitation; do not imply AI replaces trainers.
+- Use the 10:2 rhythm: brief content, then a practice/application prompt.
+- Return JSON only, no markdown.`;
+}
+
+function isProviderConfigured(provider: AiDeckProvider, env = process.env) {
+  if (provider === 'gemini') return Boolean(env.GEMINI_API_KEY);
+  if (provider === 'openai') return Boolean(env.OPENAI_API_KEY);
+  return Boolean(env.ANTHROPIC_API_KEY);
 }
 
 async function generateWithGemini(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
@@ -252,6 +417,99 @@ async function generateWithClaude(prompt: string, request: DeckOutlineRequest): 
   return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'claude-sonnet'));
 }
 
+async function generateContentPackageWithGemini(prompt: string): Promise<{ payload: Partial<ContentStudioPackage>; model: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('Gemini API key is not configured.');
+
+  const result = await postJson(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.28,
+        topP: 0.9,
+        maxOutputTokens: 6144,
+        responseMimeType: 'application/json',
+      },
+    },
+    {},
+    45_000,
+  );
+  const responsePayload = asJsonRecord(result);
+  const firstCandidate = asJsonRecord(asJsonArray(responsePayload.candidates)[0]);
+  const content = asJsonRecord(firstCandidate.content);
+  const text = asJsonArray(content.parts)
+    .map((part) => getString(asJsonRecord(part).text))
+    .join('');
+  return {
+    payload: parseJsonObject(text) as Partial<ContentStudioPackage>,
+    model: getString(responsePayload.modelVersion, 'gemini-flash-latest'),
+  };
+}
+
+async function generateContentPackageWithOpenAi(prompt: string): Promise<{ payload: Partial<ContentStudioPackage>; model: string }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OpenAI API key is not configured.');
+
+  const result = await postJson(
+    'https://api.openai.com/v1/responses',
+    {
+      model: process.env.OPENAI_CONTENT_STUDIO_MODEL || process.env.OPENAI_DECK_MODEL || 'gpt-5.5',
+      instructions: 'You are a senior Think Together learning designer. Return compact valid JSON only. No markdown.',
+      input: prompt,
+      max_output_tokens: 6144,
+      text: {
+        format: {
+          type: 'json_object',
+        },
+      },
+    },
+    {
+      authorization: `Bearer ${apiKey}`,
+    },
+    75_000,
+  );
+  const responsePayload = asJsonRecord(result);
+  const text = getString(responsePayload.output_text)
+    || asJsonArray(responsePayload.output)
+      .flatMap((item) => asJsonArray(asJsonRecord(item).content))
+      .map((part) => getString(asJsonRecord(part).text))
+      .join('');
+  return {
+    payload: parseJsonObject(text) as Partial<ContentStudioPackage>,
+    model: getString(responsePayload.model, 'gpt-5.5'),
+  };
+}
+
+async function generateContentPackageWithClaude(prompt: string): Promise<{ payload: Partial<ContentStudioPackage>; model: string }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('Anthropic API key is not configured.');
+
+  const result = await postJson(
+    'https://api.anthropic.com/v1/messages',
+    {
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+      max_tokens: 6144,
+      temperature: 0.28,
+      system: 'You are a senior Think Together learning designer. Return compact valid JSON only. No markdown.',
+      messages: [{ role: 'user', content: prompt }],
+    },
+    {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    60_000,
+  );
+  const responsePayload = asJsonRecord(result);
+  const text = asJsonArray(responsePayload.content)
+    .map((part) => getString(asJsonRecord(part).text))
+    .join('');
+  return {
+    payload: parseJsonObject(text) as Partial<ContentStudioPackage>,
+    model: getString(responsePayload.model, 'claude-sonnet'),
+  };
+}
+
 async function postJson(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -301,6 +559,234 @@ function normalizeDeckOutline(payload: Partial<DeckOutline>, request: DeckOutlin
     handoffNotes: stringArray(payload.handoffNotes).slice(0, 5),
     sourceArtifacts,
     generatedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeContentStudioPackage(
+  payload: Partial<ContentStudioPackage>,
+  request: ContentStudioPackageRequest,
+  provider: AiDeckProvider,
+  model: string,
+): ContentStudioPackage {
+  const fallback = buildDeterministicContentStudioPackage(request);
+  const deckOutline = Array.isArray(payload.deckOutline) ? payload.deckOutline : [];
+  const knowledgeCheckQuestions = Array.isArray(payload.knowledgeCheckQuestions) ? payload.knowledgeCheckQuestions : [];
+  const practiceActivity = asJsonRecord(payload.practiceActivity);
+  const learnerHandout = asJsonRecord(payload.learnerHandout);
+  const deliveryNotes = asJsonRecord(payload.deliveryNotes);
+
+  return {
+    provider,
+    model,
+    title: getString(payload.title, fallback.title),
+    audience: getString(payload.audience, request.audience),
+    durationMinutes: Number(payload.durationMinutes || request.durationMinutes),
+    learningObjectives: boundedList(stringArray(payload.learningObjectives), 2, 3, fallback.learningObjectives),
+    deckOutline: (deckOutline.length ? deckOutline : fallback.deckOutline)
+      .map((section, index) => normalizeContentStudioDeckSection(section, fallback.deckOutline[index] ?? fallback.deckOutline[0]))
+      .slice(0, 6),
+    knowledgeCheckQuestions: (knowledgeCheckQuestions.length ? knowledgeCheckQuestions : fallback.knowledgeCheckQuestions)
+      .map((question, index) => normalizeKnowledgeCheckQuestion(question, fallback.knowledgeCheckQuestions[index] ?? fallback.knowledgeCheckQuestions[0]))
+      .slice(0, 3),
+    practiceActivity: {
+      title: getString(practiceActivity.title, fallback.practiceActivity.title),
+      instructions: boundedList(stringArray(practiceActivity.instructions), 2, 5, fallback.practiceActivity.instructions),
+      facilitatorPrompt: getString(practiceActivity.facilitatorPrompt, fallback.practiceActivity.facilitatorPrompt),
+      successCriteria: boundedList(stringArray(practiceActivity.successCriteria), 2, 4, fallback.practiceActivity.successCriteria),
+      sourceRefs: normalizeSourceRefs(practiceActivity.sourceRefs).slice(0, 3),
+    },
+    facilitatorGuideNotes: boundedList(stringArray(payload.facilitatorGuideNotes), 3, 6, fallback.facilitatorGuideNotes),
+    learnerHandout: {
+      summary: getString(learnerHandout.summary, fallback.learnerHandout.summary),
+      keyTakeaways: boundedList(stringArray(learnerHandout.keyTakeaways), 3, 5, fallback.learnerHandout.keyTakeaways),
+      resourceList: normalizeResourceList(learnerHandout.resourceList, fallback.learnerHandout.resourceList),
+    },
+    deliveryNotes: {
+      inPerson: boundedList(stringArray(deliveryNotes.inPerson), 2, 5, fallback.deliveryNotes.inPerson),
+      virtual: boundedList(stringArray(deliveryNotes.virtual), 2, 5, fallback.deliveryNotes.virtual),
+    },
+    sourceArtifacts: fallback.sourceArtifacts,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function buildDeterministicContentStudioPackage(request: ContentStudioPackageRequest): ContentStudioPackage {
+  const context = contentStudioContext(request);
+  const modules = context.modules.slice(0, 5);
+  const deckSourceRefs = context.sourceRefs.length ? context.sourceRefs : getLearningPath().sourceRefs;
+  const objectives = boundedList(
+    modules.flatMap((moduleItem) => moduleItem.content.learningObjectives),
+    2,
+    3,
+    [
+      `Connect ${request.topic} to Think Together program routines.`,
+      'Practice explicit teaching, reinforcement, and restorative correction moves.',
+      'Plan how facilitators will transfer the routine to their own site context.',
+    ],
+  );
+
+  const deckOutline = modules.map((moduleItem, index) => ({
+    sectionTitle: moduleItem.title,
+    objective: moduleItem.content.learningObjectives[0] ?? 'Apply the routine with staff.',
+    keyPoints: moduleItem.content.keyPoints.slice(0, 3),
+    activityPrompt: index % 2 === 0
+      ? `Run a two-minute partner practice for ${moduleItem.title.toLowerCase()}.`
+      : `Sort one site scenario into the right ${moduleItem.title.toLowerCase()} response.`,
+    facilitatorNotes: `Use the 10:2 rhythm: keep the ${moduleItem.title.toLowerCase()} input brief, then move staff into rehearsal.`,
+    sourceRefs: moduleItem.content.sourceRefs.slice(0, 3),
+  }));
+
+  const knowledgeCheckQuestions = modules.slice(0, 3).map((moduleItem) => {
+    const correctAnswer = moduleItem.content.keyPoints[0] ?? moduleItem.content.summary;
+    return {
+      question: `Which action best supports ${moduleItem.title.toLowerCase()}?`,
+      options: [
+        correctAnswer,
+        'Wait until behavior escalates before naming expectations.',
+        'Use a different routine each day so students stay alert.',
+      ],
+      correctAnswer,
+      rationale: moduleItem.content.summary,
+      sourceRefs: moduleItem.content.sourceRefs.slice(0, 2),
+    };
+  });
+
+  const resourceList = deckSourceRefs.slice(0, 6).map((ref) => {
+    const artifact = getTrainingSourceArtifact(ref.artifact);
+    return {
+      artifact: ref.artifact,
+      locator: ref.locator,
+      ...(artifact?.title ? { title: artifact.title } : {}),
+    };
+  });
+
+  return {
+    provider: 'deterministic',
+    model: 'content-studio-fallback-v1',
+    title: request.topic,
+    audience: request.audience,
+    durationMinutes: request.durationMinutes,
+    learningObjectives: objectives,
+    deckOutline,
+    knowledgeCheckQuestions,
+    practiceActivity: {
+      title: `${request.topic} practice lab`,
+      instructions: [
+        'Select one realistic program transition or student-support scenario.',
+        'Have pairs script the adult language, model the routine, and rehearse the correction or reinforcement move.',
+        'Debrief with one observable strength and one adjustment before the next round.',
+      ],
+      facilitatorPrompt: 'What would students see and hear if this routine was taught clearly and reinforced consistently?',
+      successCriteria: [
+        'Staff name the expectation in observable language.',
+        'Staff model before asking learners to perform the routine.',
+        'Staff use a brief check for understanding before moving on.',
+      ],
+      sourceRefs: deckSourceRefs.slice(0, 3),
+    },
+    facilitatorGuideNotes: [
+      'Open by connecting the package to existing PBIS and induction source artifacts.',
+      'Keep direct instruction short and move quickly into staff rehearsal.',
+      'Ask facilitators to name the student evidence they would look for during transfer.',
+      'Close with one commitment each participant can try during the next program session.',
+    ],
+    learnerHandout: {
+      summary: `${request.topic} for ${request.audience}: source-grounded routines, quick checks, and practice moves for expanded learning staff.`,
+      keyTakeaways: [
+        'Teach expectations before correction.',
+        'Use concise adult language and observable evidence.',
+        'Pair each content chunk with practice, feedback, and transfer planning.',
+      ],
+      resourceList,
+    },
+    deliveryNotes: {
+      inPerson: [
+        'Set tables for pairs or triads so every participant can rehearse language out loud.',
+        'Use chart paper or a visible matrix to capture examples, evidence, and transfer commitments.',
+      ],
+      virtual: [
+        'Use breakout rooms for the practice lab and ask each room to return with one scripted adult move.',
+        'Keep resource links and the handout visible in chat so participants can reference source artifacts during practice.',
+      ],
+    },
+    sourceArtifacts: context.sourceArtifacts.map((artifact) => artifact.artifact),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeContentStudioDeckSection(value: unknown, fallback: ContentStudioDeckSection): ContentStudioDeckSection {
+  const section = asJsonRecord(value);
+  return {
+    sectionTitle: getString(section.sectionTitle, fallback.sectionTitle),
+    objective: getString(section.objective, fallback.objective),
+    keyPoints: boundedList(stringArray(section.keyPoints), 2, 4, fallback.keyPoints),
+    activityPrompt: getString(section.activityPrompt, fallback.activityPrompt),
+    facilitatorNotes: getString(section.facilitatorNotes, fallback.facilitatorNotes),
+    sourceRefs: normalizeSourceRefs(section.sourceRefs).slice(0, 3),
+  };
+}
+
+function normalizeKnowledgeCheckQuestion(value: unknown, fallback: ContentStudioKnowledgeCheckQuestion): ContentStudioKnowledgeCheckQuestion {
+  const question = asJsonRecord(value);
+  const options = boundedList(stringArray(question.options), 3, 4, fallback.options);
+  const correctAnswer = getString(question.correctAnswer, fallback.correctAnswer);
+  return {
+    question: getString(question.question, fallback.question),
+    options: options.includes(correctAnswer) ? options : [correctAnswer, ...options].slice(0, 4),
+    correctAnswer,
+    rationale: getString(question.rationale, fallback.rationale),
+    sourceRefs: normalizeSourceRefs(question.sourceRefs).slice(0, 2),
+  };
+}
+
+function normalizeResourceList(value: unknown, fallback: Array<SourceRef & { title?: string }>) {
+  if (!Array.isArray(value)) return fallback;
+  const resources = value
+    .map((item) => {
+      const record = asJsonRecord(item);
+      const artifact = getString(record.artifact);
+      const locator = getString(record.locator);
+      const title = getString(record.title);
+      return artifact && locator ? { artifact, locator, ...(title ? { title } : {}) } : undefined;
+    })
+    .filter((item): item is SourceRef & { title?: string } => Boolean(item))
+    .slice(0, 8);
+  return resources.length ? resources : fallback;
+}
+
+function boundedList(values: string[], min: number, max: number, fallback: string[]) {
+  const cleaned = values.map((value) => compactString(value, 180)).filter(Boolean);
+  const withFallback = cleaned.length >= min ? cleaned : [...cleaned, ...fallback];
+  return [...new Set(withFallback)].slice(0, max);
+}
+
+function contentStudioContext(request: ContentStudioPackageRequest) {
+  const requestedArtifacts = (request.sourceArtifactIds ?? [])
+    .map((artifactId) => getTrainingSourceArtifact(artifactId))
+    .filter((artifact): artifact is SourceArtifact => Boolean(artifact));
+  const requestedArtifactNames = new Set(requestedArtifacts.map((artifact) => artifact.artifact));
+  const modulesForArtifacts = requestedArtifactNames.size
+    ? trainingModules.filter((moduleItem) =>
+      moduleItem.content.sourceRefs.some((ref) => requestedArtifactNames.has(ref.artifact)),
+    )
+    : [];
+  const modules = modulesForArtifacts.length ? modulesForArtifacts : trainingModules.slice(0, 6);
+  const path = getLearningPath();
+  const sourceRefs = uniqueSourceRefs([
+    ...path.sourceRefs.filter((ref) => requestedArtifactNames.size === 0 || requestedArtifactNames.has(ref.artifact)),
+    ...modules.flatMap((moduleItem) => moduleItem.content.sourceRefs),
+  ]);
+  const moduleArtifactNames = new Set(sourceRefs.map((ref) => ref.artifact));
+  const sourceArtifacts = requestedArtifacts.length
+    ? requestedArtifacts
+    : [...moduleArtifactNames]
+      .map((artifactName) => getTrainingSourceArtifact(artifactName))
+      .filter((artifact): artifact is SourceArtifact => Boolean(artifact));
+
+  return {
+    modules: modules.slice(0, 6),
+    sourceRefs,
+    sourceArtifacts,
   };
 }
 
