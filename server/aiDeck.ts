@@ -126,10 +126,10 @@ export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
     },
     {
       id: 'openai',
-      label: 'OpenAI GPT-5.5',
+      label: 'OpenAI Premium',
       configured: Boolean(env.OPENAI_API_KEY),
       mode: 'sync',
-      note: 'Premium structured deck planner for professional infographic PPTX exports.',
+      note: `Premium structured deck planner using ${getPreferredOpenAiDeckModel(env)} when available.`,
     },
     {
       id: 'claude',
@@ -364,31 +364,20 @@ async function generateWithOpenAi(prompt: string, request: DeckOutlineRequest): 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OpenAI API key is not configured.');
 
-  const result = await postJson(
-    'https://api.openai.com/v1/responses',
-    {
-      model: process.env.OPENAI_DECK_MODEL || 'gpt-5.5',
-      instructions: 'You are a senior learning designer, presentation strategist, and infographic art director. Return compact valid JSON only. No markdown.',
-      input: prompt,
-      max_output_tokens: 6144,
-      text: {
-        format: {
-          type: 'json_object',
-        },
+  const result = await postOpenAiResponses(apiKey, {
+    model: getPreferredOpenAiDeckModel(),
+    instructions: 'You are a senior learning designer, presentation strategist, and infographic art director. Return compact valid JSON only. No markdown.',
+    input: prompt,
+    max_output_tokens: 6144,
+    text: {
+      format: {
+        type: 'json_object',
       },
     },
-    {
-      authorization: `Bearer ${apiKey}`,
-    },
-    75_000,
-  );
+  });
   const responsePayload = asJsonRecord(result);
-  const text = getString(responsePayload.output_text)
-    || asJsonArray(responsePayload.output)
-      .flatMap((item) => asJsonArray(asJsonRecord(item).content))
-      .map((part) => getString(asJsonRecord(part).text))
-      .join('');
-  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'gpt-5.5'));
+  const text = getOpenAiText(responsePayload);
+  return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, getPreferredOpenAiDeckModel()));
 }
 
 async function generateWithClaude(prompt: string, request: DeckOutlineRequest): Promise<DeckOutline> {
@@ -415,6 +404,60 @@ async function generateWithClaude(prompt: string, request: DeckOutlineRequest): 
     .map((part) => getString(asJsonRecord(part).text))
     .join('');
   return normalizeDeckOutline(parseJsonObject(text), request, getString(responsePayload.model, 'claude-sonnet'));
+}
+
+async function postOpenAiResponses(apiKey: string, body: JsonRecord): Promise<unknown> {
+  const preferredModel = getString(body.model, getPreferredOpenAiDeckModel());
+  const fallbackModels = getOpenAiModelFallbacks(preferredModel);
+  let lastError: Error | undefined;
+
+  for (const model of fallbackModels) {
+    try {
+      return await postJson(
+        'https://api.openai.com/v1/responses',
+        { ...body, model },
+        {
+          authorization: `Bearer ${apiKey}`,
+        },
+        75_000,
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('OpenAI provider request failed.');
+      if (!isRetryableOpenAiModelError(lastError)) throw lastError;
+    }
+  }
+
+  throw lastError ?? new Error('OpenAI provider request failed.');
+}
+
+function getOpenAiText(responsePayload: JsonRecord) {
+  return getString(responsePayload.output_text)
+    || asJsonArray(responsePayload.output)
+      .flatMap((item) => asJsonArray(asJsonRecord(item).content))
+      .map((part) => getString(asJsonRecord(part).text))
+      .join('');
+}
+
+function getPreferredOpenAiDeckModel(env = process.env) {
+  return env.OPENAI_DECK_MODEL || env.OPENAI_CONTENT_STUDIO_MODEL || 'gpt-5.2';
+}
+
+function getOpenAiModelFallbacks(preferredModel: string) {
+  return [...new Set([
+    preferredModel,
+    'gpt-5.2',
+    'gpt-5.1',
+    'gpt-4.1',
+  ])];
+}
+
+function isRetryableOpenAiModelError(error: Error) {
+  const message = error.message.toLowerCase();
+  return message.includes('model')
+    || message.includes('not found')
+    || message.includes('does not exist')
+    || message.includes('not have access')
+    || message.includes('unsupported');
 }
 
 async function generateContentPackageWithGemini(prompt: string): Promise<{ payload: Partial<ContentStudioPackage>; model: string }> {
@@ -451,33 +494,22 @@ async function generateContentPackageWithOpenAi(prompt: string): Promise<{ paylo
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OpenAI API key is not configured.');
 
-  const result = await postJson(
-    'https://api.openai.com/v1/responses',
-    {
-      model: process.env.OPENAI_CONTENT_STUDIO_MODEL || process.env.OPENAI_DECK_MODEL || 'gpt-5.5',
-      instructions: 'You are a senior Think Together learning designer. Return compact valid JSON only. No markdown.',
-      input: prompt,
-      max_output_tokens: 6144,
-      text: {
-        format: {
-          type: 'json_object',
-        },
+  const result = await postOpenAiResponses(apiKey, {
+    model: process.env.OPENAI_CONTENT_STUDIO_MODEL || process.env.OPENAI_DECK_MODEL || getPreferredOpenAiDeckModel(),
+    instructions: 'You are a senior Think Together learning designer. Return compact valid JSON only. No markdown.',
+    input: prompt,
+    max_output_tokens: 6144,
+    text: {
+      format: {
+        type: 'json_object',
       },
     },
-    {
-      authorization: `Bearer ${apiKey}`,
-    },
-    75_000,
-  );
+  });
   const responsePayload = asJsonRecord(result);
-  const text = getString(responsePayload.output_text)
-    || asJsonArray(responsePayload.output)
-      .flatMap((item) => asJsonArray(asJsonRecord(item).content))
-      .map((part) => getString(asJsonRecord(part).text))
-      .join('');
+  const text = getOpenAiText(responsePayload);
   return {
     payload: parseJsonObject(text) as Partial<ContentStudioPackage>,
-    model: getString(responsePayload.model, 'gpt-5.5'),
+    model: getString(responsePayload.model, getPreferredOpenAiDeckModel()),
   };
 }
 
