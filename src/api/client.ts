@@ -34,7 +34,7 @@ export type AuthSession = {
 }
 
 export type InviteStatus = 'not_invited' | 'not_sent' | 'pending' | 'accepted' | 'expired' | 'revoked'
-export type AdminExportKind = 'clearance' | 'completions'
+export type AdminExportKind = 'clearance' | 'completions' | 'supervisor-digest'
 
 export type LearnerInvite = {
   learnerId: string
@@ -209,6 +209,7 @@ export type CompletionNotificationPreview = {
   learnerId: string
   learnerName: string
   email: string
+  recipientEmail: string
   supervisor: string
   facilitatorIds: string[]
   cohortId: string
@@ -222,6 +223,9 @@ export type CompletionNotificationPreview = {
   completedAt: string | null
   exportedToLms: boolean
   exportedAt: string | null
+  subject: string
+  body: string
+  digestType: 'completion' | 'coaching' | 'makeup'
   preview: string
 }
 
@@ -614,8 +618,21 @@ export async function revokeLearnerInvite(learnerId: string) {
 }
 
 export async function downloadAdminExport(kind: AdminExportKind) {
-  const path = kind === 'clearance' ? '/api/admin/exports/clearance.csv' : '/api/admin/exports/completions.csv'
-  const filename = kind === 'clearance' ? 'think-clearance-export.csv' : 'think-completion-export.csv'
+  const exportConfig = {
+    clearance: {
+      path: '/api/admin/exports/clearance.csv',
+      filename: 'think-clearance-export.csv',
+    },
+    completions: {
+      path: '/api/admin/exports/completions.csv',
+      filename: 'think-completion-export.csv',
+    },
+    'supervisor-digest': {
+      path: '/api/admin/exports/supervisor-digest.csv',
+      filename: 'think-supervisor-digest.csv',
+    },
+  } satisfies Record<AdminExportKind, { path: string; filename: string }>
+  const { path, filename } = exportConfig[kind]
   const headers = new Headers()
   const token = readStoredToken()
   if (token) {

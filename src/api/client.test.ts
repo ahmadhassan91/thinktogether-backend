@@ -181,6 +181,25 @@ describe('admin management client', () => {
     expect(click).toHaveBeenCalled()
   })
 
+  it('downloads the supervisor digest export with auth headers', async () => {
+    storeToken('admin-token')
+    const anchor = document.createElement('a')
+    const click = vi.spyOn(anchor, 'click').mockImplementation(() => undefined)
+    vi.spyOn(document, 'createElement').mockReturnValue(anchor)
+    fetchMock.mockResolvedValueOnce(new Response('owner,learner_name\nTraining Ops,Maya Rivera\n', {
+      status: 200,
+      headers: { 'content-type': 'text/csv' },
+    }))
+
+    await downloadAdminExport('supervisor-digest')
+
+    const exportInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/exports/supervisor-digest.csv')
+    expect((exportInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+    expect(anchor.download).toBe('think-supervisor-digest.csv')
+    expect(click).toHaveBeenCalled()
+  })
+
   it('posts learner training survey feedback with the expected API shape', async () => {
     storeToken('learner-token')
     fetchMock.mockResolvedValueOnce(json({

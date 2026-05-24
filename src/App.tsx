@@ -580,6 +580,7 @@ function renderView({
         cohorts={adminCohorts}
         onCreateContentRequest={onCreateContentRequest}
         onUpdateContentRequestStatus={onUpdateContentRequestStatus}
+        onDownloadExport={onDownloadExport}
       />
     )
   }
@@ -682,6 +683,7 @@ function SupervisorReportingPanel({
   cohorts,
   onCreateContentRequest,
   onUpdateContentRequestStatus,
+  onDownloadExport,
 }: {
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
@@ -693,6 +695,7 @@ function SupervisorReportingPanel({
     status: ContentDevelopmentRequest['status'],
     reviewNotes: string,
   ) => Promise<void>
+  onDownloadExport?: (kind: 'supervisor-digest') => Promise<void> | void
 }) {
   const [contentRequestForm, setContentRequestForm] = useState({
     request: 'Behavior management for high-energy transitions',
@@ -705,8 +708,13 @@ function SupervisorReportingPanel({
   })
   const [contentRequestSaving, setContentRequestSaving] = useState(false)
   const [contentRequestError, setContentRequestError] = useState('')
+  const [reportExportError, setReportExportError] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState('')
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
+  const cohortGroups = supervisorReport?.groups?.cohorts ?? []
+  const drilldownGroups = [...supervisorGroups, ...facilitatorGroups, ...cohortGroups]
+  const selectedGroup = drilldownGroups.find((group) => group.id === selectedGroupId) ?? drilldownGroups[0]
   const actionQueue = supervisorReport?.actionQueue ?? []
   const assignmentAutomation = supervisorReport?.assignmentAutomation
   const integrationReadiness = supervisorReport?.integrationReadiness ?? []
@@ -715,6 +723,17 @@ function SupervisorReportingPanel({
   const notificationPreviews = supervisorReport?.completionNotifications ?? []
   const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
   const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
+  const handleDownloadSupervisorDigest = async () => {
+    if (!onDownloadExport) return
+
+    setReportExportError('')
+    try {
+      await onDownloadExport('supervisor-digest')
+    } catch (error) {
+      setReportExportError(error instanceof Error ? error.message : 'Unable to download supervisor digest')
+    }
+  }
+
   const handleContentRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setContentRequestSaving(true)
@@ -798,13 +817,19 @@ function SupervisorReportingPanel({
                 <ul>
                   {notificationPreviews.slice(0, 3).map((item) => (
                     <li key={`${item.learnerId}-${item.pathId}`}>
-                      {item.preview}
+                      <strong>{item.subject}</strong>
+                      <span>{item.recipientEmail}</span>
+                      <em>{item.body}</em>
                     </li>
                   ))}
                 </ul>
               ) : (
                 <p>No completion notifications are waiting. Completed learners will appear here for supervisor follow-up.</p>
               )}
+              <button className="button-secondary" type="button" onClick={() => void handleDownloadSupervisorDigest()}>
+                Download supervisor digest CSV
+              </button>
+              {reportExportError ? <p role="alert">{reportExportError}</p> : null}
             </article>
             <article>
               <h2>Phase 2 automation preview</h2>
@@ -982,23 +1007,45 @@ function SupervisorReportingPanel({
           </section>
           {supervisorGroups.length || facilitatorGroups.length ? (
             <section className="reporting-view__table" aria-labelledby="supervisor-groups-title">
-              <h2 id="supervisor-groups-title">Supervisor and facilitator drilldown</h2>
+              <div className="reporting-view__section-heading">
+                <div>
+                  <p className="app-hero__label">Drilldown</p>
+                  <h2 id="supervisor-groups-title">Supervisor, cohort, and facilitator detail</h2>
+                </div>
+                {selectedGroup ? <span>{selectedGroup.learnerCount} learners</span> : null}
+              </div>
+              <label className="reporting-view__group-select">
+                Review group
+                <select value={selectedGroup?.id ?? ''} onChange={(event) => setSelectedGroupId(event.target.value)}>
+                  {drilldownGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.label} · {group.learnerCount} learners · {group.averageProgressPercent}% avg
+                    </option>
+                  ))}
+                </select>
+              </label>
               <table className="reporting-table reporting-table--groups">
                 <thead>
                   <tr>
-                    <th>Group</th>
-                    <th>Learners</th>
-                    <th>Avg progress</th>
-                    <th>Completion rate</th>
+                    <th>Learner</th>
+                    <th>Path</th>
+                    <th>Progress</th>
+                    <th>Score</th>
+                    <th>Next action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[...supervisorGroups, ...facilitatorGroups].slice(0, 8).map((group) => (
-                    <tr key={group.id}>
-                      <td data-label="Group">{group.label}</td>
-                      <td data-label="Learners">{group.learnerCount}</td>
-                      <td data-label="Avg progress">{group.averageProgressPercent}%</td>
-                      <td data-label="Completion rate">{group.completionRate}%</td>
+                  {(selectedGroup?.learners ?? []).map((learnerItem) => (
+                    <tr key={`${selectedGroup?.id}-${learnerItem.id}-${learnerItem.path.id}`}>
+                      <td data-label="Learner">
+                        <strong>{learnerItem.name}</strong>
+                        <small>{learnerItem.email}</small>
+                        <small>{learnerItem.cohort.name} · {learnerItem.site ?? 'Site pending'}</small>
+                      </td>
+                      <td data-label="Path">{learnerItem.path.title}</td>
+                      <td data-label="Progress">{learnerItem.progressPercent}%</td>
+                      <td data-label="Score">{learnerItem.scores.completionScore}%</td>
+                      <td data-label="Next action">{supervisorNextAction(learnerItem)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1048,6 +1095,22 @@ function contentRequestNextNote(status: ContentDevelopmentRequest['status']) {
   if (status === 'approved') return 'Approved by training reviewer for pilot use.'
   if (status === 'published') return 'Published for rollout planning and assignment.'
   return ''
+}
+
+function supervisorNextAction(learner: SupervisorReportPayload['groups']['supervisors'][number]['learners'][number]) {
+  if (learner.completion.status === 'completed' && !learner.completion.exportedToLms) {
+    return 'Review LMS export and send completion notice'
+  }
+  if (learner.completion.status === 'completed') {
+    return 'Include in next supervisor digest'
+  }
+  if (learner.progressPercent >= 50) {
+    return 'Send coaching nudge before final check'
+  }
+  if (learner.practiceSubmissions > 0) {
+    return 'Review practice evidence for makeup support'
+  }
+  return 'Monitor invite and first module start'
 }
 
 function toLearnerIdentity(user: AuthUser, profile?: LearnerProfile | null): Learner {

@@ -696,6 +696,12 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     sendCsv(res, 'think-completion-export.csv', result.rows as Array<Record<string, unknown>>, completionExportHeaders);
   });
 
+  app.get('/api/admin/exports/supervisor-digest.csv', authenticate, requireAdmin, async (_req, res) => {
+    const report = await readSupervisorReport(db);
+    const rows = buildSupervisorDigestExportRows(report);
+    sendCsv(res, 'think-supervisor-digest.csv', rows, supervisorDigestExportHeaders);
+  });
+
   app.get('/api/admin/learners', authenticate, requireAdmin, async (_req, res) => {
     const result = await db.query(adminLearnersQuery());
     res.json({ learners: (result.rows as AdminLearnerRow[]).map(mapAdminLearner) });
@@ -1409,31 +1415,12 @@ async function readSupervisorReport(db: AppDatabase) {
     integrationReadiness: buildIntegrationReadiness(learners),
     contentDevelopmentRequests,
     rolloutForecast: buildRolloutForecast(learners),
-    completionNotifications: learners
-      .filter((learner) => learner.completion.completedAt)
-      .map((learner) => ({
-        learnerId: learner.id,
-        learnerName: learner.name,
-        email: learner.email,
-        supervisor: learner.supervisor,
-        facilitatorIds: learner.facilitatorIds,
-        cohortId: learner.cohort.id,
-        cohortName: learner.cohort.name,
-        pathId: learner.path.id,
-        pathTitle: learner.path.title,
-        completionStatus: learner.completion.status,
-        progressPercent: learner.progressPercent,
-        score: learner.scores.completionScore,
-        confirmationCode: learner.completion.confirmationCode,
-        completedAt: learner.completion.completedAt,
-        exportedToLms: learner.completion.exportedToLms,
-        exportedAt: learner.completion.exportedAt,
-        preview: `${learner.name} completed ${learner.path.title} for ${learner.cohort.name} with ${learner.progressPercent}% progress.`,
-      })),
+    completionNotifications: buildCompletionNotificationPreviews(learners),
   };
 }
 
 type SupervisorReportLearner = ReturnType<typeof mapSupervisorReportLearner>;
+type SupervisorReportPayload = Awaited<ReturnType<typeof readSupervisorReport>>;
 
 function buildRolloutForecast(learners: SupervisorReportLearner[]) {
   const learnersWithAssignmentData = learners.filter((learner) =>
@@ -1449,6 +1436,95 @@ function buildRolloutForecast(learners: SupervisorReportLearner[]) {
     lmsRowsReady: completedLearners.filter((learner) => !learner.completion.exportedToLms).length,
     estimatedTrainerHoursSaved: 12,
   };
+}
+
+function buildCompletionNotificationPreviews(learners: SupervisorReportLearner[]) {
+  return learners
+    .filter((learner) => learner.completion.completedAt || learner.completion.status === 'in_progress' || learner.completion.status === 'needs_review')
+    .map((learner) => {
+      const digestType = learner.completion.status === 'completed'
+        ? 'completion' as const
+        : learner.completion.status === 'needs_review'
+          ? 'makeup' as const
+          : 'coaching' as const;
+      const recipientName = learner.supervisor !== 'Unassigned' ? learner.supervisor : learner.facilitatorIds[0] ?? 'Training Ops';
+      const recipientEmail = recipientName === 'Unassigned'
+        ? 'training-ops@thinktogether.local'
+        : `${slugify(recipientName).replaceAll('-', '.')}@thinktogether.local`;
+      const subject = digestType === 'completion'
+        ? `${learner.name} completed ${learner.path.title}`
+        : digestType === 'makeup'
+          ? `${learner.name} needs makeup review for ${learner.path.title}`
+          : `${learner.name} is ready for a practice nudge`;
+      const body = digestType === 'completion'
+        ? `${learner.name} completed ${learner.path.title} for ${learner.cohort.name} with ${learner.progressPercent}% progress and score ${learner.scores.completionScore}%. Confirmation: ${learner.completion.confirmationCode ?? 'pending'}.`
+        : digestType === 'makeup'
+          ? `${learner.name} has activity in ${learner.path.title} but is not clearance-ready. Review attendance, practice evidence, and makeup option before the next cohort closeout.`
+          : `${learner.name} is ${learner.progressPercent}% complete in ${learner.path.title}. Send a short coaching reminder to finish practice, knowledge check, and commitment evidence.`;
+
+      return {
+        learnerId: learner.id,
+        learnerName: learner.name,
+        email: learner.email,
+        recipientEmail,
+        supervisor: learner.supervisor,
+        facilitatorIds: learner.facilitatorIds,
+        cohortId: learner.cohort.id,
+        cohortName: learner.cohort.name,
+        pathId: learner.path.id,
+        pathTitle: learner.path.title,
+        completionStatus: learner.completion.status,
+        progressPercent: learner.progressPercent,
+        score: learner.scores.completionScore,
+        confirmationCode: learner.completion.confirmationCode,
+        completedAt: learner.completion.completedAt,
+        exportedToLms: learner.completion.exportedToLms,
+        exportedAt: learner.completion.exportedAt,
+        subject,
+        body,
+        digestType,
+        preview: `${recipientName}: ${subject}`,
+      };
+    });
+}
+
+function buildSupervisorDigestExportRows(report: SupervisorReportPayload) {
+  const generatedAt = report.generatedAt;
+  const actionRows = report.actionQueue.map((item) => ({
+    generated_at: generatedAt,
+    row_type: 'action',
+    owner: item.owner,
+    learner_id: item.learnerId,
+    learner_name: item.learnerName,
+    learner_email: '',
+    cohort_name: '',
+    learning_path: '',
+    status: item.status,
+    priority: item.priority,
+    progress_percent: '',
+    score: '',
+    subject: item.title,
+    message: item.detail,
+    exported_to_lms: '',
+  }));
+  const notificationRows = report.completionNotifications.map((item) => ({
+    generated_at: generatedAt,
+    row_type: item.digestType,
+    owner: item.supervisor !== 'Unassigned' ? item.supervisor : item.facilitatorIds[0] ?? 'Training Ops',
+    learner_id: item.learnerId,
+    learner_name: item.learnerName,
+    learner_email: item.email,
+    cohort_name: item.cohortName,
+    learning_path: item.pathTitle,
+    status: item.completionStatus,
+    priority: item.digestType === 'completion' ? 'medium' : 'low',
+    progress_percent: item.progressPercent,
+    score: item.score,
+    subject: item.subject,
+    message: item.body,
+    exported_to_lms: item.exportedToLms,
+  }));
+  return [...actionRows, ...notificationRows];
 }
 
 async function readContentDevelopmentRequests(db: AppDatabase) {
@@ -1941,6 +2017,24 @@ const completionExportHeaders = [
   'average_knowledge_score',
   'practice_submissions',
   'invite_status',
+];
+
+const supervisorDigestExportHeaders = [
+  'generated_at',
+  'row_type',
+  'owner',
+  'learner_id',
+  'learner_name',
+  'learner_email',
+  'cohort_name',
+  'learning_path',
+  'status',
+  'priority',
+  'progress_percent',
+  'score',
+  'subject',
+  'message',
+  'exported_to_lms',
 ];
 
 function toCsv(rows: Array<Record<string, unknown>>, headers = rows[0] ? Object.keys(rows[0]) : []) {

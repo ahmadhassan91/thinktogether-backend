@@ -657,9 +657,22 @@ describe.sequential('Think Together training API', () => {
         score: 100,
         confirmationCode: expect.stringContaining('PBIS-learner-1-'),
         exportedToLms: false,
-        preview: 'Maya Rivera completed Program Induction - PBIS for PBIS MVP Pilot with 100% progress.',
+        recipientEmail: 'regional.supervisor.a@thinktogether.local',
+        subject: 'Maya Rivera completed Program Induction - PBIS',
+        body: expect.stringContaining('Confirmation: PBIS-learner-1-'),
+        digestType: 'completion',
+        preview: 'Regional Supervisor A: Maya Rivera completed Program Induction - PBIS',
       }),
     ]);
+
+    const digestExport = await request(handle.app)
+      .get('/api/admin/exports/supervisor-digest.csv')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(digestExport.headers['content-disposition']).toContain('think-supervisor-digest.csv');
+    expect(digestExport.text).toContain('generated_at,row_type,owner,learner_id,learner_name,learner_email');
+    expect(digestExport.text).toContain('Regional Supervisor A');
+    expect(digestExport.text).toContain('Maya Rivera completed Program Induction - PBIS');
   });
 
   it('blocks learner access to paths and modules outside their assignment', async () => {
@@ -777,6 +790,12 @@ describe.sequential('Think Together training API', () => {
     expect(emptyCompletionExport.text).toBe(
       'generated_at,content_version,learner_id,first_name,last_name,email,cohort_name,region,learning_path,completed_module_count,required_module_count,score,pass_fail,confirmation_code,completed_at,exported_to_lms,exported_at,average_knowledge_score,practice_submissions,invite_status\n',
     );
+
+    const supervisorDigestExport = await request(handle.app)
+      .get('/api/admin/exports/supervisor-digest.csv')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(supervisorDigestExport.text).toContain('generated_at,row_type,owner,learner_id,learner_name');
   });
 
   it('persists Phase 2 content requests and review status changes', async () => {
