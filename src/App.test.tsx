@@ -6,6 +6,23 @@ import { getLearningPath, trainingKnowledgeCheckItems, trainingScenarios } from 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   window.localStorage.setItem('think-training-token', 'test-token')
+  const contentRequests = [
+    {
+      id: 'behavior-management-request',
+      request: 'Behavior management training not already in the catalog',
+      audience: 'Program staff and site leaders',
+      deliveryMode: 'hybrid',
+      status: 'source-mapped',
+      artifactsNeeded: ['PBIS PPT Master'],
+      outputs: ['Facilitator deck', 'Knowledge check'],
+      reviewOwner: 'Program Training & Development',
+      reviewNotes: 'Source-mapped from PBIS decks.',
+      createdAt: '2026-05-24T00:00:00.000Z',
+      updatedAt: '2026-05-24T00:00:00.000Z',
+      approvedAt: null,
+      publishedAt: null,
+    },
+  ]
   vi.stubGlobal('fetch', vi.fn(async (path: RequestInfo | URL) => {
     const url = String(path)
     if (url.endsWith('/api/me')) {
@@ -41,6 +58,35 @@ beforeEach(() => {
         readinessByTrack: [],
         cohorts: [{ id: 'cohort-1', name: 'PBIS MVP Pilot', region: 'Emerging Region', participants: 1 }],
       })
+    }
+    if (url.endsWith('/api/admin/supervisor-report')) {
+      return json({
+        generatedAt: '2026-05-24T00:00:00.000Z',
+        groups: { supervisors: [], facilitators: [], cohorts: [] },
+        actionQueue: [],
+        assignmentAutomation: {
+          rules: [],
+          readyForPilot: true,
+          nextIntegration: 'Pilot weekly roster import before API sync.',
+        },
+        integrationReadiness: [],
+        contentDevelopmentRequests: contentRequests,
+        rolloutForecast: {
+          weeklyNewHires: 50,
+          autoAssignablePercent: 100,
+          supervisorDigestRecipients: 1,
+          lmsRowsReady: 0,
+          estimatedTrainerHoursSaved: 12,
+        },
+        completionNotifications: [],
+      })
+    }
+    if (url.endsWith('/api/admin/content-requests')) {
+      return json({ request: contentRequests[0] })
+    }
+    if (url.includes('/api/admin/content-requests/')) {
+      contentRequests[0] = { ...contentRequests[0], status: 'draft-ready', reviewNotes: 'Draft package is ready.' }
+      return json({ request: contentRequests[0] })
     }
     if (url.endsWith('/api/admin/learners')) {
       return json({
@@ -160,6 +206,9 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reporting' }))
     expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
     expect(screen.getByLabelText('Supervisor reporting metrics')).toHaveTextContent('clearance-ready')
+    expect(screen.getByRole('heading', { name: 'Content request pipeline' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add content request' })).toBeInTheDocument()
+    expect(screen.getByText('Behavior management training not already in the catalog')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
     expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()

@@ -77,6 +77,7 @@ async function dropAll(db: AppDatabase) {
       progress,
       facilitator_feedback,
       admin_audit_events,
+      content_development_requests,
       clearance_records,
       attendance_records,
       participants,
@@ -96,6 +97,7 @@ async function dropAll(db: AppDatabase) {
       _progress,
       _facilitator_feedback,
       _admin_audit_events,
+      _content_development_requests,
       _clearance_records,
       _attendance_records,
       _participants,
@@ -440,6 +442,33 @@ const migrations = [
     CREATE INDEX IF NOT EXISTS admin_audit_events_entity_idx ON admin_audit_events(entity_type, entity_id);
   `,
   },
+  {
+    id: '007_content_development_requests',
+    name: 'Phase 2 content development requests',
+    sql: `
+    CREATE TABLE IF NOT EXISTS content_development_requests (
+      id TEXT PRIMARY KEY,
+      request TEXT NOT NULL,
+      audience TEXT NOT NULL,
+      delivery_mode TEXT NOT NULL CHECK (delivery_mode IN ('in-person', 'virtual', 'hybrid')),
+      status TEXT NOT NULL CHECK (status IN ('intake', 'source-mapped', 'draft-ready', 'review-needed', 'approved', 'published')),
+      artifacts_needed JSONB NOT NULL,
+      outputs JSONB NOT NULL,
+      review_owner TEXT NOT NULL,
+      review_notes TEXT NOT NULL DEFAULT '',
+      requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      approved_at TIMESTAMPTZ,
+      published_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS content_development_requests_status_idx
+      ON content_development_requests(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS content_development_requests_requested_by_idx
+      ON content_development_requests(requested_by, created_at DESC);
+  `,
+  },
 ] satisfies Array<{ id: string; name: string; sql: string }>;
 
 async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
@@ -452,6 +481,7 @@ async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
      DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role`,
     ['admin-1', seed.adminEmail.toLowerCase(), 'Think Together Admin', adminHash, 'admin', now],
   );
+  await seedContentDevelopmentRequests(db, now);
 
   for (const path of trainingLearningPaths) {
     await db.query(
@@ -607,6 +637,67 @@ async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
   }
 
   await seedOperationalReadiness(db);
+}
+
+async function seedContentDevelopmentRequests(db: AppDatabase, now: string) {
+  const requests = [
+    {
+      id: 'behavior-management-request',
+      request: 'Behavior management training not already in the catalog',
+      audience: 'Program staff and site leaders',
+      deliveryMode: 'hybrid',
+      status: 'source-mapped',
+      artifactsNeeded: ['PBIS PPT Master', 'PBIS part 3 template', 'Knowledge check sample'],
+      outputs: ['Facilitator deck', 'Knowledge check', 'Practice scenarios', 'Learner handout'],
+      reviewOwner: 'Program Training & Development',
+      reviewNotes: 'Source-mapped from PBIS decks; needs human review before facilitation.',
+    },
+    {
+      id: 'virtual-makeup-path',
+      request: 'Virtual option for staff who miss in-person training',
+      audience: 'New hires needing makeup completion',
+      deliveryMode: 'virtual',
+      status: 'intake',
+      artifactsNeeded: ['Program Induction SOP', 'Survey questions', 'Attendance/clearance rules'],
+      outputs: ['Self-paced module sequence', 'Final knowledge check', 'Completion receipt'],
+      reviewOwner: 'Training Ops',
+      reviewNotes: 'Define makeup attendance and completion policy before publish.',
+    },
+    {
+      id: 'standardized-trainer-template',
+      request: 'Standardized trainer template with objectives, application, and resources',
+      audience: '20-person training development team',
+      deliveryMode: 'in-person',
+      status: 'draft-ready',
+      artifactsNeeded: ['Existing deck templates', 'SOP source library', 'Brand guidance'],
+      outputs: ['Deck starter', 'Facilitator guide', 'Resource sheet', 'Review checklist'],
+      reviewOwner: 'Marketing + Training',
+      reviewNotes: 'Template should preserve 2-3 objectives, application, and resource sections.',
+    },
+  ];
+
+  for (const request of requests) {
+    await db.query(
+      `INSERT INTO content_development_requests
+        (id, request, audience, delivery_mode, status, artifacts_needed, outputs,
+         review_owner, review_notes, requested_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        request.id,
+        request.request,
+        request.audience,
+        request.deliveryMode,
+        request.status,
+        toJson(request.artifactsNeeded),
+        toJson(request.outputs),
+        request.reviewOwner,
+        request.reviewNotes,
+        'admin-1',
+        now,
+      ],
+    );
+  }
 }
 
 async function seedOperationalReadiness(db: AppDatabase) {

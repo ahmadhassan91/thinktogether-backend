@@ -757,6 +757,7 @@ describe.sequential('Think Together training API', () => {
       { id: '004_invite_revocations', name: 'Invite revocation support' },
       { id: '005_feedback_guard', name: 'Learner survey duplicate guard' },
       { id: '006_admin_audit', name: 'Admin audit event trail' },
+      { id: '007_content_development_requests', name: 'Phase 2 content development requests' },
     ]);
 
     const clearanceExport = await request(handle.app)
@@ -775,6 +776,93 @@ describe.sequential('Think Together training API', () => {
       .expect(200);
     expect(emptyCompletionExport.text).toBe(
       'generated_at,content_version,learner_id,first_name,last_name,email,cohort_name,region,learning_path,completed_module_count,required_module_count,score,pass_fail,confirmation_code,completed_at,exported_to_lms,exported_at,average_knowledge_score,practice_submissions,invite_status\n',
+    );
+  });
+
+  it('persists Phase 2 content requests and review status changes', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+
+    const seeded = await request(handle.app)
+      .get('/api/admin/content-requests')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(seeded.body.requests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'behavior-management-request',
+          request: 'Behavior management training not already in the catalog',
+          reviewOwner: 'Program Training & Development',
+        }),
+      ]),
+    );
+
+    const created = await request(handle.app)
+      .post('/api/admin/content-requests')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        request: 'Rapid virtual makeup training for missed PBIS sessions',
+        audience: 'New hires and regional supervisors',
+        deliveryMode: 'virtual',
+        artifactsNeeded: ['SOP_Program Induction.pdf', 'PBIS PPT Master.pptx'],
+        outputs: ['Self-paced module', 'Knowledge check', 'Completion report'],
+        reviewOwner: 'Training Ops',
+        reviewNotes: 'Build from official PBIS and induction source library.',
+      })
+      .expect(201);
+
+    expect(created.body.request).toMatchObject({
+      status: 'intake',
+      deliveryMode: 'virtual',
+      reviewOwner: 'Training Ops',
+      approvedAt: null,
+      publishedAt: null,
+    });
+
+    const updated = await request(handle.app)
+      .patch(`/api/admin/content-requests/${created.body.request.id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'review-needed', reviewNotes: 'Supervisor review required before pilot.' })
+      .expect(200);
+
+    expect(updated.body.request).toMatchObject({
+      id: created.body.request.id,
+      status: 'review-needed',
+      reviewNotes: 'Supervisor review required before pilot.',
+    });
+
+    const report = await request(handle.app)
+      .get('/api/admin/supervisor-report')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(report.body.contentDevelopmentRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.body.request.id,
+          status: 'review-needed',
+          outputs: ['Self-paced module', 'Knowledge check', 'Completion report'],
+        }),
+      ]),
+    );
+
+    const audit = await request(handle.app)
+      .get('/api/admin/audit-events')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(audit.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'content_request.status_updated',
+          entityId: created.body.request.id,
+        }),
+        expect.objectContaining({
+          action: 'content_request.created',
+          entityId: created.body.request.id,
+        }),
+      ]),
     );
   });
 

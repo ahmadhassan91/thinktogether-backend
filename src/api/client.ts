@@ -176,9 +176,25 @@ export type ContentDevelopmentRequest = {
   request: string
   audience: string
   deliveryMode: ContentStudioDeliveryMode
-  status: 'intake' | 'source-mapped' | 'draft-ready' | 'review-needed'
+  status: 'intake' | 'source-mapped' | 'draft-ready' | 'review-needed' | 'approved' | 'published'
   artifactsNeeded: string[]
   outputs: string[]
+  reviewOwner: string
+  reviewNotes: string
+  createdAt: string
+  updatedAt: string
+  approvedAt: string | null
+  publishedAt: string | null
+}
+
+export type ContentDevelopmentRequestInput = {
+  request: string
+  audience: string
+  deliveryMode: ContentStudioDeliveryMode
+  artifactsNeeded: string[]
+  outputs: string[]
+  reviewOwner: string
+  reviewNotes?: string
 }
 
 export type RolloutForecast = {
@@ -683,6 +699,24 @@ export async function createContentStudioPackage(input: ContentStudioPackageInpu
   return request<{ package: ContentStudioPackage }>('/api/content-studio/packages', {
     method: 'POST',
     body: JSON.stringify(input),
+  })
+}
+
+export async function createContentDevelopmentRequest(input: ContentDevelopmentRequestInput) {
+  return request<{ request: ContentDevelopmentRequest }>('/api/admin/content-requests', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateContentDevelopmentRequestStatus(
+  requestId: string,
+  status: ContentDevelopmentRequest['status'],
+  reviewNotes = '',
+) {
+  return request<{ request: ContentDevelopmentRequest }>(`/api/admin/content-requests/${requestId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, reviewNotes }),
   })
 }
 

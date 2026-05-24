@@ -139,6 +139,23 @@ const contentStudioPackageSchema = z.object({
   sourceArtifactIds: z.array(z.string().trim().min(1)).max(12).default([]),
 });
 
+const contentRequestStatusSchema = z.enum(['intake', 'source-mapped', 'draft-ready', 'review-needed', 'approved', 'published']);
+
+const adminContentRequestSchema = z.object({
+  request: z.string().trim().min(8).max(220),
+  audience: z.string().trim().min(3).max(160),
+  deliveryMode: z.enum(['in-person', 'virtual', 'hybrid']).default('hybrid'),
+  artifactsNeeded: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+  outputs: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+  reviewOwner: z.string().trim().min(2).max(120).default('Program Training & Development'),
+  reviewNotes: z.string().trim().max(1200).default(''),
+});
+
+const adminContentRequestStatusSchema = z.object({
+  status: contentRequestStatusSchema,
+  reviewNotes: z.string().trim().max(1200).default(''),
+});
+
 const sourceSearchSchema = z.object({
   query: z.string().trim().min(2).max(160),
 });
@@ -502,6 +519,70 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
 
   app.get('/api/admin/supervisor-report', authenticate, requireAdmin, async (_req, res) => {
     res.json(await readSupervisorReport(db));
+  });
+
+  app.get('/api/admin/content-requests', authenticate, requireAdmin, async (_req, res) => {
+    res.json({ requests: await readContentDevelopmentRequests(db) });
+  });
+
+  app.post('/api/admin/content-requests', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = adminContentRequestSchema.parse(req.body);
+    const id = slugify(`${payload.request}-${randomUUID().slice(0, 8)}`);
+    const now = new Date().toISOString();
+    const result = await db.query(
+      `INSERT INTO content_development_requests
+        (id, request, audience, delivery_mode, status, artifacts_needed, outputs,
+         review_owner, review_notes, requested_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+       RETURNING *`,
+      [
+        id,
+        payload.request,
+        payload.audience,
+        payload.deliveryMode,
+        'intake',
+        JSON.stringify(payload.artifactsNeeded),
+        JSON.stringify(payload.outputs),
+        payload.reviewOwner,
+        payload.reviewNotes,
+        req.user?.id ?? null,
+        now,
+      ],
+    );
+
+    await recordAuditEvent(db, req.user, 'content_request.created', 'content_request', id, {
+      request: payload.request,
+      audience: payload.audience,
+      deliveryMode: payload.deliveryMode,
+      outputs: payload.outputs,
+    });
+
+    res.status(201).json({ request: mapContentDevelopmentRequest(result.rows[0] as ContentDevelopmentRequestRow) });
+  });
+
+  app.patch('/api/admin/content-requests/:requestId/status', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = adminContentRequestStatusSchema.parse(req.body);
+    const now = new Date().toISOString();
+    const result = await db.query(
+      `UPDATE content_development_requests
+       SET status = $2,
+           review_notes = CASE WHEN $3 = '' THEN review_notes ELSE $3 END,
+           updated_at = $4,
+           approved_at = CASE WHEN $2 = 'approved' THEN $4::timestamptz ELSE approved_at END,
+           published_at = CASE WHEN $2 = 'published' THEN $4::timestamptz ELSE published_at END
+       WHERE id = $1
+       RETURNING *`,
+      [String(req.params.requestId), payload.status, payload.reviewNotes, now],
+    );
+    const row = result.rows[0] as ContentDevelopmentRequestRow | undefined;
+    if (!row) return res.status(404).json({ error: 'Content request not found' });
+
+    await recordAuditEvent(db, req.user, 'content_request.status_updated', 'content_request', row.id, {
+      status: payload.status,
+      reviewNotes: payload.reviewNotes,
+    });
+
+    res.json({ request: mapContentDevelopmentRequest(row) });
   });
 
   app.get('/api/admin/audit-events', authenticate, requireAdmin, async (_req, res) => {
@@ -1315,6 +1396,7 @@ async function readSupervisorReport(db: AppDatabase) {
   `);
 
   const learners = (result.rows as SupervisorReportRow[]).map(mapSupervisorReportLearner);
+  const contentDevelopmentRequests = await readContentDevelopmentRequests(db);
   return {
     generatedAt: new Date().toISOString(),
     groups: {
@@ -1325,7 +1407,7 @@ async function readSupervisorReport(db: AppDatabase) {
     actionQueue: buildSupervisorActionQueue(learners),
     assignmentAutomation: buildAssignmentAutomationPreview(learners),
     integrationReadiness: buildIntegrationReadiness(learners),
-    contentDevelopmentRequests: buildContentDevelopmentRequests(),
+    contentDevelopmentRequests,
     rolloutForecast: buildRolloutForecast(learners),
     completionNotifications: learners
       .filter((learner) => learner.completion.completedAt)
@@ -1369,6 +1451,42 @@ function buildRolloutForecast(learners: SupervisorReportLearner[]) {
   };
 }
 
+async function readContentDevelopmentRequests(db: AppDatabase) {
+  const result = await db.query(
+    `SELECT *
+     FROM content_development_requests
+     ORDER BY
+       CASE status
+        WHEN 'review-needed' THEN 0
+        WHEN 'draft-ready' THEN 1
+        WHEN 'source-mapped' THEN 2
+        WHEN 'intake' THEN 3
+        WHEN 'approved' THEN 4
+        ELSE 5
+       END,
+       updated_at DESC`,
+  );
+  return (result.rows as ContentDevelopmentRequestRow[]).map(mapContentDevelopmentRequest);
+}
+
+function mapContentDevelopmentRequest(row: ContentDevelopmentRequestRow) {
+  return {
+    id: row.id,
+    request: row.request,
+    audience: row.audience,
+    deliveryMode: row.delivery_mode,
+    status: row.status,
+    artifactsNeeded: row.artifacts_needed,
+    outputs: row.outputs,
+    reviewOwner: row.review_owner,
+    reviewNotes: row.review_notes,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    approvedAt: row.approved_at?.toISOString() ?? null,
+    publishedAt: row.published_at?.toISOString() ?? null,
+  };
+}
+
 function buildIntegrationReadiness(learners: SupervisorReportLearner[]) {
   const hasMissingSupervisor = learners.some((learner) => learner.supervisor === 'Unassigned');
   const hasCompletedNotExported = learners.some((learner) => learner.completion.status === 'completed' && !learner.completion.exportedToLms);
@@ -1405,38 +1523,6 @@ function buildIntegrationReadiness(learners: SupervisorReportLearner[]) {
       status: 'ready' as const,
       owner: 'Program Training & Development',
       nextStep: 'Route generated decks, checks, and handouts through human review before facilitation.',
-    },
-  ];
-}
-
-function buildContentDevelopmentRequests() {
-  return [
-    {
-      id: 'behavior-management-request',
-      request: 'Behavior management training not already in the catalog',
-      audience: 'Program staff and site leaders',
-      deliveryMode: 'hybrid' as const,
-      status: 'source-mapped' as const,
-      artifactsNeeded: ['PBIS PPT Master', 'PBIS part 3 template', 'Knowledge check sample'],
-      outputs: ['Facilitator deck', 'Knowledge check', 'Practice scenarios', 'Learner handout'],
-    },
-    {
-      id: 'virtual-makeup-path',
-      request: 'Virtual option for staff who miss in-person training',
-      audience: 'New hires needing makeup completion',
-      deliveryMode: 'virtual' as const,
-      status: 'intake' as const,
-      artifactsNeeded: ['Program Induction SOP', 'Survey questions', 'Attendance/clearance rules'],
-      outputs: ['Self-paced module sequence', 'Final knowledge check', 'Completion receipt'],
-    },
-    {
-      id: 'standardized-trainer-template',
-      request: 'Standardized trainer template with objectives, application, and resources',
-      audience: '20-person training development team',
-      deliveryMode: 'in-person' as const,
-      status: 'draft-ready' as const,
-      artifactsNeeded: ['Existing deck templates', 'SOP source library', 'Brand guidance'],
-      outputs: ['Deck starter', 'Facilitator guide', 'Resource sheet', 'Review checklist'],
     },
   ];
 }
@@ -2092,6 +2178,23 @@ type SupervisorReportRow = {
   completed_at: Date | null;
   exported_to_lms: boolean | null;
   exported_at: Date | null;
+};
+
+type ContentDevelopmentRequestRow = {
+  id: string;
+  request: string;
+  audience: string;
+  delivery_mode: 'in-person' | 'virtual' | 'hybrid';
+  status: 'intake' | 'source-mapped' | 'draft-ready' | 'review-needed' | 'approved' | 'published';
+  artifacts_needed: string[];
+  outputs: string[];
+  review_owner: string;
+  review_notes: string;
+  requested_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+  approved_at: Date | null;
+  published_at: Date | null;
 };
 
 type CompletionRecordRow = {

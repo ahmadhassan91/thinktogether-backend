@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
   acceptInvite,
@@ -9,6 +9,7 @@ import {
   createAiDeckOutline,
   createAdminCohort,
   createAdminLearner,
+  createContentDevelopmentRequest,
   createContentStudioPackage,
   createLearnerInvite,
   downloadAiDeckPptx,
@@ -31,6 +32,7 @@ import {
   scoreScenario,
   searchSourceIntelligence,
   submitTrainingSurvey,
+  updateContentDevelopmentRequestStatus,
   type AdminAuditEvent,
   type AdminCohort,
   type AdminDashboardPayload,
@@ -41,6 +43,8 @@ import {
   type AuthUser,
   type ContentStudioPackage,
   type ContentStudioDeliveryMode,
+  type ContentDevelopmentRequest,
+  type ContentDevelopmentRequestInput,
   type LearningPathPayload,
   type LearnerProfile,
   type SourceLibraryPayload,
@@ -409,6 +413,24 @@ function App() {
               setSupervisorReport(supervisorReportPayload)
               setAdminAuditEvents(auditPayload.events)
             },
+            onCreateContentRequest: async (input) => {
+              await createContentDevelopmentRequest(input)
+              const [supervisorReportPayload, auditPayload] = await Promise.all([
+                getAdminSupervisorReport(),
+                getAdminAuditEvents(),
+              ])
+              setSupervisorReport(supervisorReportPayload)
+              setAdminAuditEvents(auditPayload.events)
+            },
+            onUpdateContentRequestStatus: async (requestId, status, reviewNotes) => {
+              await updateContentDevelopmentRequestStatus(requestId, status, reviewNotes)
+              const [supervisorReportPayload, auditPayload] = await Promise.all([
+                getAdminSupervisorReport(),
+                getAdminAuditEvents(),
+              ])
+              setSupervisorReport(supervisorReportPayload)
+              setAdminAuditEvents(auditPayload.events)
+            },
             onCreateLearnerInvite: async (learnerId) => {
               const invitePayload = await createLearnerInvite(learnerId)
               setAdminAuditEvents((await getAdminAuditEvents()).events)
@@ -472,6 +494,8 @@ function renderView({
   onAnswerKnowledgeCheck,
   onCreateLearner,
   onCreateCohort,
+  onCreateContentRequest,
+  onUpdateContentRequestStatus,
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
@@ -499,6 +523,12 @@ function renderView({
   onAnswerKnowledgeCheck: (moduleId: string, answer: string) => Promise<void>
   onCreateLearner: Parameters<typeof AdminDashboard>[0]['onCreateLearner']
   onCreateCohort: Parameters<typeof AdminDashboard>[0]['onCreateCohort']
+  onCreateContentRequest: (input: ContentDevelopmentRequestInput) => Promise<void>
+  onUpdateContentRequestStatus: (
+    requestId: string,
+    status: ContentDevelopmentRequest['status'],
+    reviewNotes: string,
+  ) => Promise<void>
   onCreateLearnerInvite: Parameters<typeof AdminDashboard>[0]['onCreateLearnerInvite']
   onRevokeLearnerInvite: Parameters<typeof AdminDashboard>[0]['onRevokeLearnerInvite']
   onDownloadExport: Parameters<typeof AdminDashboard>[0]['onDownloadExport']
@@ -542,7 +572,16 @@ function renderView({
   }
 
   if (view === 'reporting' && isAdmin) {
-    return <SupervisorReportingPanel dashboard={dashboard} supervisorReport={supervisorReport} learners={adminLearners} cohorts={adminCohorts} />
+    return (
+      <SupervisorReportingPanel
+        dashboard={dashboard}
+        supervisorReport={supervisorReport}
+        learners={adminLearners}
+        cohorts={adminCohorts}
+        onCreateContentRequest={onCreateContentRequest}
+        onUpdateContentRequestStatus={onUpdateContentRequestStatus}
+      />
+    )
   }
 
   if (view === 'plan') {
@@ -641,12 +680,31 @@ function SupervisorReportingPanel({
   supervisorReport,
   learners,
   cohorts,
+  onCreateContentRequest,
+  onUpdateContentRequestStatus,
 }: {
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
   learners: AdminLearner[]
   cohorts: AdminCohort[]
+  onCreateContentRequest: (input: ContentDevelopmentRequestInput) => Promise<void>
+  onUpdateContentRequestStatus: (
+    requestId: string,
+    status: ContentDevelopmentRequest['status'],
+    reviewNotes: string,
+  ) => Promise<void>
 }) {
+  const [contentRequestForm, setContentRequestForm] = useState({
+    request: 'Behavior management for high-energy transitions',
+    audience: 'Program staff and site leaders',
+    deliveryMode: 'hybrid' as ContentStudioDeliveryMode,
+    artifactsNeeded: 'PBIS PPT Master; PBIS part 3 template; Knowledge check sample',
+    outputs: 'Facilitator deck; Knowledge check; Practice scenarios; Learner handout',
+    reviewOwner: 'Program Training & Development',
+    reviewNotes: 'Needs source map and human review before pilot.',
+  })
+  const [contentRequestSaving, setContentRequestSaving] = useState(false)
+  const [contentRequestError, setContentRequestError] = useState('')
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
   const actionQueue = supervisorReport?.actionQueue ?? []
@@ -657,6 +715,46 @@ function SupervisorReportingPanel({
   const notificationPreviews = supervisorReport?.completionNotifications ?? []
   const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
   const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
+  const handleContentRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setContentRequestSaving(true)
+    setContentRequestError('')
+    try {
+      await onCreateContentRequest({
+        request: contentRequestForm.request,
+        audience: contentRequestForm.audience,
+        deliveryMode: contentRequestForm.deliveryMode,
+        artifactsNeeded: splitListInput(contentRequestForm.artifactsNeeded),
+        outputs: splitListInput(contentRequestForm.outputs),
+        reviewOwner: contentRequestForm.reviewOwner,
+        reviewNotes: contentRequestForm.reviewNotes,
+      })
+      setContentRequestForm((current) => ({
+        ...current,
+        request: '',
+        reviewNotes: '',
+      }))
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to add content request')
+    } finally {
+      setContentRequestSaving(false)
+    }
+  }
+
+  const advanceContentRequest = async (item: ContentDevelopmentRequest) => {
+    const nextStatus = nextContentRequestStatus(item.status)
+    if (!nextStatus) return
+    const note = contentRequestNextNote(nextStatus)
+    setContentRequestSaving(true)
+    setContentRequestError('')
+    try {
+      await onUpdateContentRequestStatus(item.id, nextStatus, note)
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to update content request')
+    } finally {
+      setContentRequestSaving(false)
+    }
+  }
 
   return (
     <main className="reporting-view" aria-labelledby="reporting-title">
@@ -782,6 +880,80 @@ function SupervisorReportingPanel({
             </article>
             <article>
               <h2>Content request pipeline</h2>
+              <form className="content-request-form" onSubmit={handleContentRequestSubmit}>
+                <label>
+                  Request
+                  <input
+                    value={contentRequestForm.request}
+                    onChange={(event) => setContentRequestForm((current) => ({ ...current, request: event.target.value }))}
+                    placeholder="Training request"
+                    required
+                  />
+                </label>
+                <div className="content-request-form__row">
+                  <label>
+                    Audience
+                    <input
+                      value={contentRequestForm.audience}
+                      onChange={(event) => setContentRequestForm((current) => ({ ...current, audience: event.target.value }))}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Delivery
+                    <select
+                      value={contentRequestForm.deliveryMode}
+                      onChange={(event) =>
+                        setContentRequestForm((current) => ({
+                          ...current,
+                          deliveryMode: event.target.value as ContentStudioDeliveryMode,
+                        }))
+                      }
+                    >
+                      <option value="hybrid">Hybrid</option>
+                      <option value="in-person">In-person</option>
+                      <option value="virtual">Virtual</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  Source artifacts needed
+                  <input
+                    value={contentRequestForm.artifactsNeeded}
+                    onChange={(event) => setContentRequestForm((current) => ({ ...current, artifactsNeeded: event.target.value }))}
+                    required
+                  />
+                </label>
+                <label>
+                  Outputs
+                  <input
+                    value={contentRequestForm.outputs}
+                    onChange={(event) => setContentRequestForm((current) => ({ ...current, outputs: event.target.value }))}
+                    required
+                  />
+                </label>
+                <div className="content-request-form__row">
+                  <label>
+                    Review owner
+                    <input
+                      value={contentRequestForm.reviewOwner}
+                      onChange={(event) => setContentRequestForm((current) => ({ ...current, reviewOwner: event.target.value }))}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Review note
+                    <input
+                      value={contentRequestForm.reviewNotes}
+                      onChange={(event) => setContentRequestForm((current) => ({ ...current, reviewNotes: event.target.value }))}
+                    />
+                  </label>
+                </div>
+                <button type="submit" disabled={contentRequestSaving}>
+                  {contentRequestSaving ? 'Saving...' : 'Add content request'}
+                </button>
+                {contentRequestError ? <p role="alert">{contentRequestError}</p> : null}
+              </form>
               <div className="content-request-list">
                 {contentRequests.map((item) => (
                   <div key={item.id}>
@@ -789,6 +961,20 @@ function SupervisorReportingPanel({
                     <strong>{item.request}</strong>
                     <small>{item.audience} · {item.deliveryMode}</small>
                     <p>{item.outputs.join(' + ')}</p>
+                    <small>Owner: {item.reviewOwner}</small>
+                    {item.reviewNotes ? <p>{item.reviewNotes}</p> : null}
+                    {nextContentRequestStatus(item.status) ? (
+                      <button
+                        className="button-secondary"
+                        type="button"
+                        disabled={contentRequestSaving}
+                        onClick={() => void advanceContentRequest(item)}
+                      >
+                        {nextContentRequestActionLabel(item.status)}
+                      </button>
+                    ) : (
+                      <small>Published and ready for rollout planning.</small>
+                    )}
                   </div>
                 ))}
               </div>
@@ -831,6 +1017,37 @@ function SupervisorReportingPanel({
       )}
     </main>
   )
+}
+
+function splitListInput(value: string) {
+  return value
+    .split(/[\n;,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function nextContentRequestStatus(status: ContentDevelopmentRequest['status']): ContentDevelopmentRequest['status'] | null {
+  if (status === 'intake' || status === 'source-mapped') return 'draft-ready'
+  if (status === 'draft-ready') return 'review-needed'
+  if (status === 'review-needed') return 'approved'
+  if (status === 'approved') return 'published'
+  return null
+}
+
+function nextContentRequestActionLabel(status: ContentDevelopmentRequest['status']) {
+  if (status === 'intake' || status === 'source-mapped') return 'Mark draft ready'
+  if (status === 'draft-ready') return 'Send to review'
+  if (status === 'review-needed') return 'Approve'
+  if (status === 'approved') return 'Publish'
+  return 'Updated'
+}
+
+function contentRequestNextNote(status: ContentDevelopmentRequest['status']) {
+  if (status === 'draft-ready') return 'Draft package is ready for source and facilitation review.'
+  if (status === 'review-needed') return 'Human review requested before pilot delivery.'
+  if (status === 'approved') return 'Approved by training reviewer for pilot use.'
+  if (status === 'published') return 'Published for rollout planning and assignment.'
+  return ''
 }
 
 function toLearnerIdentity(user: AuthUser, profile?: LearnerProfile | null): Learner {
