@@ -163,6 +163,70 @@ export type AssignmentAutomationPreview = {
   nextIntegration: string
 }
 
+export type AutoAssignmentRule = {
+  id: string
+  name: string
+  priority: number
+  active: boolean
+  matchCriteria: {
+    titleKeywords: string[]
+    requiredFields: string[]
+  }
+  cohort: {
+    id: string
+    name: string
+    region: string
+  }
+  pathIds: string[]
+  pathTitles: string[]
+  reviewGate: string
+  notificationTemplate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type AssignmentPreviewPayload = {
+  generatedAt: string
+  rules: AutoAssignmentRule[]
+  rows: Array<{
+    rowNumber: number
+    status: 'auto_assign' | 'needs_review' | 'duplicate' | 'no_rule'
+    learner: {
+      firstName: string
+      lastName: string
+      email: string
+      employeeId: string
+      title: string
+      region: string
+      site: string
+      supervisor: string
+      hireDate: string
+    }
+    matchedRule: {
+      id: string
+      name: string
+      reviewGate: string
+    } | null
+    suggestedAssignment: {
+      cohortId: string
+      cohortName: string
+      pathIds: string[]
+      pathTitles: string[]
+      notificationTemplate: string
+    } | null
+    missingFields: string[]
+    reviewReasons: string[]
+    inviteAction: 'queue_invite' | 'skip_existing_learner' | 'hold_for_training_ops_review'
+  }>
+  summary: {
+    totalRows: number
+    autoAssignable: number
+    needsReview: number
+    duplicate: number
+    noRule: number
+  }
+}
+
 export type IntegrationReadinessItem = {
   id: string
   system: 'HR/ADP' | 'LMS' | 'Email' | 'Content Library'
@@ -588,6 +652,17 @@ export async function getAdminDashboard() {
 
 export async function getAdminSupervisorReport() {
   return request<SupervisorReportPayload>('/api/admin/supervisor-report')
+}
+
+export async function getAutoAssignmentRules() {
+  return request<{ rules: AutoAssignmentRule[] }>('/api/admin/assignment-rules')
+}
+
+export async function previewAssignmentCsv(csvText: string) {
+  return request<AssignmentPreviewPayload>('/api/admin/assignment-preview', {
+    method: 'POST',
+    body: JSON.stringify({ csvText }),
+  })
 }
 
 export async function getAdminAuditEvents() {

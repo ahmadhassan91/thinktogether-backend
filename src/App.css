@@ -1077,7 +1077,9 @@
 .reporting-chip[data-status='needs_mapping'],
 .reporting-chip[data-status='needs_approval'],
 .reporting-chip[data-status='review-needed'],
-.reporting-chip[data-status='intake'] {
+.reporting-chip[data-status='intake'],
+.reporting-chip[data-status='needs_review'],
+.reporting-chip[data-status='no_rule'] {
   border-color: rgba(248, 168, 64, 0.36);
   background: #fff8e8;
   color: #7a4b12;
@@ -1085,16 +1087,79 @@
 
 .reporting-chip[data-status='ready'],
 .reporting-chip[data-status='source-mapped'],
-.reporting-chip[data-status='draft-ready'] {
+.reporting-chip[data-status='draft-ready'],
+.reporting-chip[data-status='auto_assign'] {
   border-color: rgba(26, 138, 128, 0.22);
   background: var(--tt-soft-teal);
   color: #145d55;
+}
+
+.reporting-chip[data-status='duplicate'] {
+  border-color: rgba(185, 61, 31, 0.28);
+  background: #fff1e9;
+  color: #b83d1f;
 }
 
 .readiness-list,
 .content-request-list {
   display: grid;
   gap: 0.7rem;
+}
+
+.assignment-preview {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.assignment-preview__rules {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.assignment-preview__rules article {
+  display: grid;
+  gap: 0.28rem;
+  border: 1px solid var(--tt-line);
+  border-left: 0.25rem solid var(--tt-teal);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-white);
+  padding: 0.75rem;
+}
+
+.assignment-preview__rules small,
+.assignment-preview__rules em {
+  color: var(--tt-muted);
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.assignment-preview__rules p {
+  margin: 0;
+}
+
+.assignment-preview__input {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--tt-dark);
+  font-weight: 850;
+}
+
+.assignment-preview__input textarea {
+  width: 100%;
+  min-height: 10rem;
+  resize: vertical;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-white);
+  color: var(--tt-dark);
+  font: 0.88rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 0.75rem;
+}
+
+.assignment-preview__results {
+  display: grid;
+  gap: 0.75rem;
 }
 
 .content-request-form {

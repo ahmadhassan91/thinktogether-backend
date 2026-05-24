@@ -160,6 +160,10 @@ const sourceSearchSchema = z.object({
   query: z.string().trim().min(2).max(160),
 });
 
+const assignmentRosterPreviewSchema = z.object({
+  csvText: z.string().trim().min(10).max(20_000),
+});
+
 export async function createApp(options: AppOptions): Promise<AppHandle> {
   const db = await createDatabase({
     connectionString: options.databaseUrl,
@@ -519,6 +523,45 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
 
   app.get('/api/admin/supervisor-report', authenticate, requireAdmin, async (_req, res) => {
     res.json(await readSupervisorReport(db));
+  });
+
+  app.get('/api/admin/assignment-rules', authenticate, requireAdmin, async (_req, res) => {
+    res.json({ rules: await readAutoAssignmentRules(db) });
+  });
+
+  app.post('/api/admin/assignment-preview', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = assignmentRosterPreviewSchema.parse(req.body);
+    const rules = await readAutoAssignmentRules(db);
+    const rosterRows = parseRosterCsv(payload.csvText);
+    if (!rosterRows.length) return res.status(400).json({ error: 'Roster CSV needs at least one data row' });
+
+    const emails = rosterRows.flatMap((row) => (row.email ? [row.email] : []));
+    const existingResult = emails.length
+      ? await db.query('SELECT email FROM learners WHERE email = ANY($1::text[])', [emails.map((email) => email.toLowerCase())])
+      : { rows: [] };
+    const existingEmails = new Set((existingResult.rows as Array<{ email: string }>).map((row) => row.email.toLowerCase()));
+    const previewRows = rosterRows.map((row, index) => previewAssignmentRow(row, index + 1, rules, existingEmails));
+
+    await recordAuditEvent(db, req.user, 'assignment_preview.generated', 'assignment_preview', randomUUID(), {
+      rowCount: previewRows.length,
+      autoAssignable: previewRows.filter((row) => row.status === 'auto_assign').length,
+      needsReview: previewRows.filter((row) => row.status === 'needs_review').length,
+      duplicate: previewRows.filter((row) => row.status === 'duplicate').length,
+      noRule: previewRows.filter((row) => row.status === 'no_rule').length,
+    });
+
+    res.status(201).json({
+      generatedAt: new Date().toISOString(),
+      rules,
+      rows: previewRows,
+      summary: {
+        totalRows: previewRows.length,
+        autoAssignable: previewRows.filter((row) => row.status === 'auto_assign').length,
+        needsReview: previewRows.filter((row) => row.status === 'needs_review').length,
+        duplicate: previewRows.filter((row) => row.status === 'duplicate').length,
+        noRule: previewRows.filter((row) => row.status === 'no_rule').length,
+      },
+    });
   });
 
   app.get('/api/admin/content-requests', authenticate, requireAdmin, async (_req, res) => {
@@ -1411,7 +1454,7 @@ async function readSupervisorReport(db: AppDatabase) {
       cohorts: groupSupervisorReportLearners(learners, 'cohort'),
     },
     actionQueue: buildSupervisorActionQueue(learners),
-    assignmentAutomation: buildAssignmentAutomationPreview(learners),
+    assignmentAutomation: await buildAssignmentAutomationPreview(db, learners),
     integrationReadiness: buildIntegrationReadiness(learners),
     contentDevelopmentRequests,
     rolloutForecast: buildRolloutForecast(learners),
@@ -1421,6 +1464,235 @@ async function readSupervisorReport(db: AppDatabase) {
 
 type SupervisorReportLearner = ReturnType<typeof mapSupervisorReportLearner>;
 type SupervisorReportPayload = Awaited<ReturnType<typeof readSupervisorReport>>;
+
+async function readAutoAssignmentRules(db: AppDatabase) {
+  const result = await db.query(
+    `SELECT
+       r.id,
+       r.name,
+       r.priority,
+       r.active,
+       r.match_criteria,
+       r.cohort_id,
+       c.name AS cohort_name,
+       c.region AS cohort_region,
+       r.path_ids,
+       COALESCE(path_titles.titles, ARRAY[]::text[]) AS path_titles,
+       r.review_gate,
+       r.notification_template,
+       r.created_at,
+       r.updated_at
+     FROM auto_assignment_rules r
+     JOIN cohorts c ON c.id = r.cohort_id
+     LEFT JOIN LATERAL (
+       SELECT ARRAY_AGG(lp.title ORDER BY lp.title) AS titles
+       FROM jsonb_array_elements_text(r.path_ids) AS path_id(value)
+       JOIN learning_paths lp ON lp.id = path_id.value
+     ) path_titles ON true
+     ORDER BY r.active DESC, r.priority ASC, r.updated_at DESC`,
+  );
+  return (result.rows as AutoAssignmentRuleRow[]).map(mapAutoAssignmentRule);
+}
+
+function mapAutoAssignmentRule(row: AutoAssignmentRuleRow) {
+  const criteria = normalizeMatchCriteria(row.match_criteria);
+  return {
+    id: row.id,
+    name: row.name,
+    priority: Number(row.priority),
+    active: row.active,
+    matchCriteria: criteria,
+    cohort: {
+      id: row.cohort_id,
+      name: row.cohort_name,
+      region: row.cohort_region,
+    },
+    pathIds: row.path_ids,
+    pathTitles: row.path_titles,
+    reviewGate: row.review_gate,
+    notificationTemplate: row.notification_template,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+type AutoAssignmentRule = ReturnType<typeof mapAutoAssignmentRule>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function normalizeMatchCriteria(value: unknown) {
+  const record = isRecord(value) ? value : {};
+  return {
+    titleKeywords: stringArray(record.titleKeywords),
+    requiredFields: stringArray(record.requiredFields),
+  };
+}
+
+function parseRosterCsv(csvText: string) {
+  const lines = csvText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const [headerLine, ...dataLines] = lines;
+  if (!headerLine) return [];
+  const headers = parseCsvLine(headerLine).map(normalizeRosterHeader);
+
+  return dataLines
+    .map((line) => {
+      const cells = parseCsvLine(line);
+      const row: RosterPreviewInputRow = {};
+      headers.forEach((header, index) => {
+        if (!header) return;
+        row[header] = (cells[index] ?? '').trim();
+      });
+      if (row.email) row.email = row.email.toLowerCase();
+      return row;
+    })
+    .filter((row) => Object.values(row).some(Boolean));
+}
+
+function parseCsvLine(line: string) {
+  const cells: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === ',' && !quoted) {
+      cells.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+
+function normalizeRosterHeader(value: string): keyof RosterPreviewInputRow | '' {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const headerMap: Record<string, keyof RosterPreviewInputRow> = {
+    firstname: 'firstName',
+    fname: 'firstName',
+    lastname: 'lastName',
+    lname: 'lastName',
+    email: 'email',
+    workemail: 'email',
+    employeeid: 'employeeId',
+    empid: 'employeeId',
+    title: 'title',
+    jobtitle: 'title',
+    role: 'title',
+    region: 'region',
+    site: 'site',
+    supervisor: 'supervisor',
+    manager: 'supervisor',
+    hiredate: 'hireDate',
+    startdate: 'hireDate',
+  };
+  return headerMap[normalized] ?? '';
+}
+
+function previewAssignmentRow(
+  row: RosterPreviewInputRow,
+  rowNumber: number,
+  rules: AutoAssignmentRule[],
+  existingEmails: Set<string>,
+) {
+  const matchedRule = rules.find((rule) => rule.active && rowMatchesAssignmentRule(row, rule));
+  const missingFields = matchedRule
+    ? matchedRule.matchCriteria.requiredFields.filter((field) => !String(row[field as keyof RosterPreviewInputRow] ?? '').trim())
+    : [];
+  const reviewReasons: string[] = [];
+  const normalizedEmail = row.email?.toLowerCase() ?? '';
+
+  if (normalizedEmail && existingEmails.has(normalizedEmail)) {
+    reviewReasons.push('Learner email already exists in the platform.');
+  }
+  if (!matchedRule) {
+    reviewReasons.push('No active rule matched this title or role.');
+  }
+  if (missingFields.length) {
+    reviewReasons.push(`Missing ${missingFields.map(humanizeRosterField).join(', ')}.`);
+  }
+  if (!normalizedEmail) {
+    reviewReasons.push('Missing email.');
+  }
+
+  const status = normalizedEmail && existingEmails.has(normalizedEmail)
+    ? 'duplicate' as const
+    : !matchedRule
+      ? 'no_rule' as const
+      : missingFields.length || !normalizedEmail
+        ? 'needs_review' as const
+        : 'auto_assign' as const;
+
+  return {
+    rowNumber,
+    status,
+    learner: {
+      firstName: row.firstName ?? '',
+      lastName: row.lastName ?? '',
+      email: normalizedEmail,
+      employeeId: row.employeeId ?? '',
+      title: row.title ?? '',
+      region: row.region ?? '',
+      site: row.site ?? '',
+      supervisor: row.supervisor ?? '',
+      hireDate: row.hireDate ?? '',
+    },
+    matchedRule: matchedRule
+      ? {
+          id: matchedRule.id,
+          name: matchedRule.name,
+          reviewGate: matchedRule.reviewGate,
+        }
+      : null,
+    suggestedAssignment: matchedRule
+      ? {
+          cohortId: matchedRule.cohort.id,
+          cohortName: matchedRule.cohort.name,
+          pathIds: matchedRule.pathIds,
+          pathTitles: matchedRule.pathTitles,
+          notificationTemplate: matchedRule.notificationTemplate,
+        }
+      : null,
+    missingFields,
+    reviewReasons,
+    inviteAction: status === 'auto_assign'
+      ? 'queue_invite' as const
+      : status === 'duplicate'
+        ? 'skip_existing_learner' as const
+        : 'hold_for_training_ops_review' as const,
+  };
+}
+
+function rowMatchesAssignmentRule(row: RosterPreviewInputRow, rule: AutoAssignmentRule) {
+  const title = String(row.title ?? '').toLowerCase();
+  return rule.matchCriteria.titleKeywords.some((keyword) => title.includes(keyword.toLowerCase()));
+}
+
+function humanizeRosterField(value: string) {
+  const labels: Record<string, string> = {
+    email: 'email',
+    region: 'region',
+    site: 'site',
+    supervisor: 'supervisor',
+    hireDate: 'hire date',
+  };
+  return labels[value] ?? value;
+}
 
 function buildRolloutForecast(learners: SupervisorReportLearner[]) {
   const learnersWithAssignmentData = learners.filter((learner) =>
@@ -1681,29 +1953,16 @@ function buildSupervisorActionQueue(learners: SupervisorReportLearner[]) {
     .slice(0, 12);
 }
 
-function buildAssignmentAutomationPreview(learners: SupervisorReportLearner[]) {
+async function buildAssignmentAutomationPreview(db: AppDatabase, learners: SupervisorReportLearner[]) {
+  const rules = await readAutoAssignmentRules(db);
   const hasSiteLeadPath = learners.some((learner) => learner.title?.toLowerCase().includes('site lead'));
   return {
-    rules: [
-      {
-        id: 'new-hire-program-pro',
-        trigger: 'HR/ADP new hire with Program Pro or Program Leader title',
-        assignment: 'Auto-enroll in Program Induction - PBIS and the next regional cohort',
-        reviewGate: 'Flag missing region, site, supervisor, or start date before invite is sent',
-      },
-      {
-        id: 'site-lead-onboarding',
-        trigger: 'HR/ADP role change or new hire with Site Lead title',
-        assignment: 'Auto-enroll in Site Lead Onboarding four-week path',
-        reviewGate: 'Route holiday/missed-session exceptions to Training Ops for makeup scheduling',
-      },
-      {
-        id: 'completion-digest',
-        trigger: 'Learner completes final knowledge check, survey, and commitment',
-        assignment: 'Queue supervisor notification and LMS clearance export row',
-        reviewGate: 'Human review remains required before LMS/HR writeback',
-      },
-    ],
+    rules: rules.map((rule) => ({
+      id: rule.id,
+      trigger: `${rule.matchCriteria.titleKeywords.join(', ')} title match`,
+      assignment: `Auto-enroll in ${rule.pathTitles.join(' + ')} for ${rule.cohort.name}`,
+      reviewGate: rule.reviewGate,
+    })),
     readyForPilot: learners.length > 0,
     nextIntegration: hasSiteLeadPath
       ? 'Map ADP title and site fields to automatic Program Induction and Site Lead Onboarding enrollment.'
@@ -2220,6 +2479,35 @@ type AdminCohortRow = {
   facilitator_ids: string[];
   path_ids: string[];
   learner_count: number | string;
+};
+
+type AutoAssignmentRuleRow = {
+  id: string;
+  name: string;
+  priority: number | string;
+  active: boolean;
+  match_criteria: unknown;
+  cohort_id: string;
+  cohort_name: string;
+  cohort_region: string;
+  path_ids: string[];
+  path_titles: string[];
+  review_gate: string;
+  notification_template: string;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type RosterPreviewInputRow = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  employeeId?: string;
+  title?: string;
+  region?: string;
+  site?: string;
+  supervisor?: string;
+  hireDate?: string;
 };
 
 type AdminKpiRow = {

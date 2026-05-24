@@ -469,6 +469,28 @@ const migrations = [
       ON content_development_requests(requested_by, created_at DESC);
   `,
   },
+  {
+    id: '008_auto_assignment_rules',
+    name: 'Phase 2 auto-assignment rules',
+    sql: `
+    CREATE TABLE IF NOT EXISTS auto_assignment_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      priority INTEGER NOT NULL CHECK (priority >= 0),
+      active BOOLEAN NOT NULL DEFAULT true,
+      match_criteria JSONB NOT NULL,
+      cohort_id TEXT NOT NULL REFERENCES cohorts(id) ON DELETE RESTRICT,
+      path_ids JSONB NOT NULL,
+      review_gate TEXT NOT NULL,
+      notification_template TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS auto_assignment_rules_active_priority_idx
+      ON auto_assignment_rules(active, priority, updated_at DESC);
+  `,
+  },
 ] satisfies Array<{ id: string; name: string; sql: string }>;
 
 async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
@@ -637,6 +659,7 @@ async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
   }
 
   await seedOperationalReadiness(db);
+  await seedAutoAssignmentRules(db);
 }
 
 async function seedContentDevelopmentRequests(db: AppDatabase, now: string) {
@@ -735,6 +758,59 @@ async function seedOperationalReadiness(db: AppDatabase) {
       now,
     ],
   );
+}
+
+async function seedAutoAssignmentRules(db: AppDatabase) {
+  const now = new Date().toISOString();
+  const rules = [
+    {
+      id: 'program-induction-new-hire',
+      name: 'Program Induction for weekly new hires',
+      priority: 10,
+      matchCriteria: {
+        titleKeywords: ['program pro', 'program leader', 'program staff', 'youth development', 'site coordinator'],
+        requiredFields: ['email', 'region', 'site', 'supervisor', 'hireDate'],
+      },
+      cohortId: 'cohort-pbis-mvp-1',
+      pathIds: ['program-induction-pbis'],
+      reviewGate: 'Hold invite if region, site, supervisor, hire date, or email is missing.',
+      notificationTemplate: 'Send learner invite and include supervisor in the weekly readiness digest.',
+    },
+    {
+      id: 'site-lead-onboarding-new-hire',
+      name: 'Site Lead Onboarding four-week path',
+      priority: 20,
+      matchCriteria: {
+        titleKeywords: ['site lead', 'site supervisor', 'expanded learning lead'],
+        requiredFields: ['email', 'region', 'site', 'supervisor', 'hireDate'],
+      },
+      cohortId: 'cohort-pbis-mvp-1',
+      pathIds: ['site-lead-onboarding-v0'],
+      reviewGate: 'Route missed-session or holiday exceptions to Training Ops before invites go out.',
+      notificationTemplate: 'Send Site Lead Onboarding invite and queue supervisor progress digest.',
+    },
+  ];
+
+  for (const rule of rules) {
+    await db.query(
+      `INSERT INTO auto_assignment_rules
+        (id, name, priority, active, match_criteria, cohort_id, path_ids,
+         review_gate, notification_template, created_at, updated_at)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $9)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        rule.id,
+        rule.name,
+        rule.priority,
+        toJson(rule.matchCriteria),
+        rule.cohortId,
+        toJson(rule.pathIds),
+        rule.reviewGate,
+        rule.notificationTemplate,
+        now,
+      ],
+    );
+  }
 }
 
 export async function readLearningPath(db: AppDatabase, pathId: string) {

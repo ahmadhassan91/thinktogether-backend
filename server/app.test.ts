@@ -675,6 +675,87 @@ describe.sequential('Think Together training API', () => {
     expect(digestExport.text).toContain('Maya Rivera completed Program Induction - PBIS');
   });
 
+  it('previews weekly roster rows against persisted auto-assignment rules', async () => {
+    handle = await boot();
+    const adminToken = await loginToken(handle);
+
+    const rules = await request(handle.app)
+      .get('/api/admin/assignment-rules')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(rules.body.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'program-induction-new-hire',
+          name: 'Program Induction for weekly new hires',
+          active: true,
+          cohort: expect.objectContaining({ id: 'cohort-pbis-mvp-1', name: 'PBIS MVP Pilot' }),
+          pathIds: ['program-induction-pbis'],
+          matchCriteria: expect.objectContaining({
+            titleKeywords: expect.arrayContaining(['program leader']),
+            requiredFields: expect.arrayContaining(['email', 'region', 'site', 'supervisor', 'hireDate']),
+          }),
+        }),
+      ]),
+    );
+
+    const csvText = [
+      'First Name,Last Name,Email,Employee ID,Title,Region,Site,Supervisor,Hire Date',
+      'Jordan,Rivera,jordan.rivera@example.org,EMP-1042,Program Leader,Emerging Region,East Bay Site,Regional Supervisor A,2026-06-03',
+      'Maya,Rivera,maya.rivera@example.org,EMP-0001,Program Leader,Emerging Region,East Bay Site,Regional Supervisor A,2026-06-03',
+      'Sam,Patel,sam.patel@example.org,EMP-1043,Site Lead,Emerging Region,,Regional Supervisor B,2026-06-03',
+      'Alex,Chen,alex.chen@example.org,EMP-1044,Instructional Aide,Emerging Region,North Site,Regional Supervisor B,2026-06-03',
+    ].join('\n');
+
+    const preview = await request(handle.app)
+      .post('/api/admin/assignment-preview')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ csvText })
+      .expect(201);
+
+    expect(preview.body.summary).toEqual({
+      totalRows: 4,
+      autoAssignable: 1,
+      needsReview: 1,
+      duplicate: 1,
+      noRule: 1,
+    });
+    expect(preview.body.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rowNumber: 1,
+          status: 'auto_assign',
+          matchedRule: expect.objectContaining({ id: 'program-induction-new-hire' }),
+          suggestedAssignment: expect.objectContaining({
+            cohortName: 'PBIS MVP Pilot',
+            pathIds: ['program-induction-pbis'],
+          }),
+          inviteAction: 'queue_invite',
+        }),
+        expect.objectContaining({
+          rowNumber: 2,
+          status: 'duplicate',
+          reviewReasons: expect.arrayContaining(['Learner email already exists in the platform.']),
+          inviteAction: 'skip_existing_learner',
+        }),
+        expect.objectContaining({
+          rowNumber: 3,
+          status: 'needs_review',
+          matchedRule: expect.objectContaining({ id: 'site-lead-onboarding-new-hire' }),
+          missingFields: ['site'],
+          inviteAction: 'hold_for_training_ops_review',
+        }),
+        expect.objectContaining({
+          rowNumber: 4,
+          status: 'no_rule',
+          matchedRule: null,
+          reviewReasons: expect.arrayContaining(['No active rule matched this title or role.']),
+        }),
+      ]),
+    );
+  });
+
   it('blocks learner access to paths and modules outside their assignment', async () => {
     handle = await boot();
     const adminToken = await loginToken(handle);
@@ -771,6 +852,7 @@ describe.sequential('Think Together training API', () => {
       { id: '005_feedback_guard', name: 'Learner survey duplicate guard' },
       { id: '006_admin_audit', name: 'Admin audit event trail' },
       { id: '007_content_development_requests', name: 'Phase 2 content development requests' },
+      { id: '008_auto_assignment_rules', name: 'Phase 2 auto-assignment rules' },
     ]);
 
     const clearanceExport = await request(handle.app)

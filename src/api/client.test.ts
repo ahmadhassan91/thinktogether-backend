@@ -10,8 +10,10 @@ import {
   downloadAdminExport,
   getAdminCohorts,
   getAdminLearners,
+  getAutoAssignmentRules,
   getAiProviders,
   getMe,
+  previewAssignmentCsv,
   revokeLearnerInvite,
   storeToken,
   submitTrainingSurvey,
@@ -198,6 +200,50 @@ describe('admin management client', () => {
     expect((exportInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
     expect(anchor.download).toBe('think-supervisor-digest.csv')
     expect(click).toHaveBeenCalled()
+  })
+
+  it('loads assignment rules and posts roster preview CSV with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock
+      .mockResolvedValueOnce(json({
+        rules: [
+          {
+            id: 'program-induction-new-hire',
+            name: 'Program Induction for weekly new hires',
+            active: true,
+            matchCriteria: { titleKeywords: ['program leader'], requiredFields: ['email'] },
+          },
+        ],
+      }))
+      .mockResolvedValueOnce(json({
+        generatedAt: '2026-05-24T00:00:00.000Z',
+        rules: [],
+        rows: [{ rowNumber: 1, status: 'auto_assign' }],
+        summary: { totalRows: 1, autoAssignable: 1, needsReview: 0, duplicate: 0, noRule: 0 },
+      }))
+
+    await expect(getAutoAssignmentRules()).resolves.toEqual({
+      rules: [
+        {
+          id: 'program-induction-new-hire',
+          name: 'Program Induction for weekly new hires',
+          active: true,
+          matchCriteria: { titleKeywords: ['program leader'], requiredFields: ['email'] },
+        },
+      ],
+    })
+    await expect(previewAssignmentCsv('First Name,Email\nJordan,jordan@example.org')).resolves.toMatchObject({
+      summary: { totalRows: 1, autoAssignable: 1 },
+    })
+
+    const rulesInit = fetchMock.mock.calls[0][1] as RequestInit
+    const previewInit = fetchMock.mock.calls[1][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/assignment-rules')
+    expect((rulesInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/assignment-preview')
+    expect(previewInit.method).toBe('POST')
+    expect(previewInit.body).toBe(JSON.stringify({ csvText: 'First Name,Email\nJordan,jordan@example.org' }))
+    expect((previewInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 
   it('posts learner training survey feedback with the expected API shape', async () => {

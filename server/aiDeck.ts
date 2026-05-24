@@ -171,7 +171,7 @@ export async function generateContentStudioPackage(request: ContentStudioPackage
     }
     const packagePayload = await withContentStudioTimeout(generateContentPackageWithClaude(prompt));
     return normalizeContentStudioPackage(packagePayload.payload, request, provider, packagePayload.model);
-  } catch (error) {
+  } catch {
     return buildDeterministicContentStudioPackage(request);
   }
 }

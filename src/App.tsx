@@ -20,6 +20,7 @@ import {
   getAdminLearners,
   getAdminSupervisorReport,
   getAiProviders,
+  getAutoAssignmentRules,
   getLearningPath,
   getMe,
   getProgress,
@@ -27,6 +28,7 @@ import {
   getSourceLibrary,
   getSourceUsageSummary,
   login,
+  previewAssignmentCsv,
   readStoredToken,
   revokeLearnerInvite,
   scoreScenario,
@@ -37,6 +39,8 @@ import {
   type AdminCohort,
   type AdminDashboardPayload,
   type AdminLearner,
+  type AssignmentPreviewPayload,
+  type AutoAssignmentRule,
   type AiDeckOutline,
   type AiDeckProvider,
   type AiProviderStatus,
@@ -162,12 +166,6 @@ function App() {
     () => coachScenarios.find((scenario) => scenario.id === selectedScenarioId) ?? coachScenarios[0] ?? null,
     [coachScenarios, selectedScenarioId],
   )
-
-  useEffect(() => {
-    if (coachScenarios.length && !coachScenarios.some((scenario) => scenario.id === selectedScenarioId)) {
-      setSelectedScenarioId(coachScenarios[0].id)
-    }
-  }, [coachScenarios, selectedScenarioId])
 
   const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => !adminOnlyViews.includes(item.view))
   const activeViewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
@@ -365,7 +363,8 @@ function App() {
             onNextScenario: () => {
               setSelectedScenarioId((currentId) => {
                 const currentIndex = coachScenarios.findIndex((scenario) => scenario.id === currentId)
-                return coachScenarios[(currentIndex + 1) % coachScenarios.length]?.id ?? currentId
+                const nextIndex = currentIndex < 0 ? 1 % coachScenarios.length : (currentIndex + 1) % coachScenarios.length
+                return coachScenarios[nextIndex]?.id ?? currentId
               })
             },
             onCompleteModule: async (moduleId) => {
@@ -697,6 +696,12 @@ function SupervisorReportingPanel({
   ) => Promise<void>
   onDownloadExport?: (kind: 'supervisor-digest') => Promise<void> | void
 }) {
+  const sampleRosterCsv = [
+    'First Name,Last Name,Email,Employee ID,Title,Region,Site,Supervisor,Hire Date',
+    'Jordan,Rivera,jordan.rivera@thinktogether.local,EMP-1042,Program Leader,Emerging Region,East Bay Site,Regional Supervisor A,2026-06-03',
+    'Sam,Patel,sam.patel@thinktogether.local,EMP-1043,Site Lead,Emerging Region,North Valley Site,Regional Supervisor B,2026-06-03',
+    'Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Region,,Regional Supervisor B,2026-06-03',
+  ].join('\n')
   const [contentRequestForm, setContentRequestForm] = useState({
     request: 'Behavior management for high-energy transitions',
     audience: 'Program staff and site leaders',
@@ -710,6 +715,11 @@ function SupervisorReportingPanel({
   const [contentRequestError, setContentRequestError] = useState('')
   const [reportExportError, setReportExportError] = useState('')
   const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [assignmentRules, setAssignmentRules] = useState<AutoAssignmentRule[]>([])
+  const [assignmentCsv, setAssignmentCsv] = useState(sampleRosterCsv)
+  const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreviewPayload | null>(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [assignmentError, setAssignmentError] = useState('')
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
   const cohortGroups = supervisorReport?.groups?.cohorts ?? []
@@ -723,6 +733,34 @@ function SupervisorReportingPanel({
   const notificationPreviews = supervisorReport?.completionNotifications ?? []
   const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
   const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
+
+  useEffect(() => {
+    let ignore = false
+    void (async () => {
+      try {
+        const payload = await getAutoAssignmentRules()
+        if (!ignore) setAssignmentRules(payload.rules)
+      } catch {
+        if (!ignore) setAssignmentRules([])
+      }
+    })()
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  const handleAssignmentPreview = async () => {
+    setAssignmentLoading(true)
+    setAssignmentError('')
+    try {
+      setAssignmentPreview(await previewAssignmentCsv(assignmentCsv))
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Unable to preview roster assignments')
+    } finally {
+      setAssignmentLoading(false)
+    }
+  }
+
   const handleDownloadSupervisorDigest = async () => {
     if (!onDownloadExport) return
 
@@ -850,6 +888,88 @@ function SupervisorReportingPanel({
                 <p>Assignment rules appear here once supervisor reporting data is available.</p>
               )}
             </article>
+          </section>
+          <section className="reporting-view__table" aria-labelledby="assignment-preview-title">
+            <div className="reporting-view__section-heading">
+              <div>
+                <p className="app-hero__label">Roster automation</p>
+                <h2 id="assignment-preview-title">Weekly roster assignment preview</h2>
+              </div>
+              <span>{assignmentRules.filter((rule) => rule.active).length} active rules</span>
+            </div>
+            <div className="assignment-preview">
+              <div className="assignment-preview__rules" aria-label="Auto-assignment rules">
+                {assignmentRules.map((rule) => (
+                  <article key={rule.id}>
+                    <span className="reporting-chip" data-status={rule.active ? 'ready' : 'needs_mapping'}>
+                      priority {rule.priority}
+                    </span>
+                    <strong>{rule.name}</strong>
+                    <small>{rule.matchCriteria.titleKeywords.join(', ')}</small>
+                    <p>{rule.pathTitles.join(' + ')} · {rule.cohort.name}</p>
+                    <em>{rule.reviewGate}</em>
+                  </article>
+                ))}
+              </div>
+              <label className="assignment-preview__input">
+                Paste weekly HR/ADP roster CSV
+                <textarea
+                  value={assignmentCsv}
+                  onChange={(event) => setAssignmentCsv(event.target.value)}
+                  rows={6}
+                  spellCheck={false}
+                />
+              </label>
+              <button type="button" onClick={() => void handleAssignmentPreview()} disabled={assignmentLoading}>
+                {assignmentLoading ? 'Previewing roster...' : 'Preview assignments'}
+              </button>
+              {assignmentError ? <p role="alert">{assignmentError}</p> : null}
+              {assignmentPreview ? (
+                <div className="assignment-preview__results">
+                  <div className="reporting-view__metrics" aria-label="Assignment preview summary">
+                    <span><strong>{assignmentPreview.summary.totalRows}</strong> roster rows</span>
+                    <span><strong>{assignmentPreview.summary.autoAssignable}</strong> auto-assign</span>
+                    <span><strong>{assignmentPreview.summary.needsReview}</strong> needs review</span>
+                    <span><strong>{assignmentPreview.summary.duplicate}</strong> duplicates</span>
+                    <span><strong>{assignmentPreview.summary.noRule}</strong> no rule</span>
+                  </div>
+                  <table className="reporting-table reporting-table--assignment">
+                    <thead>
+                      <tr>
+                        <th>Roster row</th>
+                        <th>Matched rule</th>
+                        <th>Suggested assignment</th>
+                        <th>Status</th>
+                        <th>Review reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignmentPreview.rows.map((row) => (
+                        <tr key={row.rowNumber}>
+                          <td data-label="Roster row">
+                            <strong>{row.learner.firstName} {row.learner.lastName}</strong>
+                            <small>{row.learner.email || 'Email missing'}</small>
+                            <small>{row.learner.title || 'Title missing'} · {row.learner.region || 'Region pending'}</small>
+                          </td>
+                          <td data-label="Matched rule">{row.matchedRule?.name ?? 'No match'}</td>
+                          <td data-label="Suggested assignment">
+                            {row.suggestedAssignment
+                              ? `${row.suggestedAssignment.cohortName} · ${row.suggestedAssignment.pathTitles.join(' + ')}`
+                              : 'Training Ops review'}
+                          </td>
+                          <td data-label="Status">
+                            <span className="reporting-chip" data-status={row.status}>{row.status.replace(/_/g, ' ')}</span>
+                          </td>
+                          <td data-label="Review reason">
+                            {row.reviewReasons.length ? row.reviewReasons.join(' ') : row.inviteAction.replace(/_/g, ' ')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
           </section>
           <section className="reporting-view__table" aria-labelledby="supervisor-actions-title">
             <div className="reporting-view__section-heading">
