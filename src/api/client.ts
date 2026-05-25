@@ -261,6 +261,28 @@ export type ContentDevelopmentRequestInput = {
   reviewNotes?: string
 }
 
+export type GeneratedTrainingPackage = {
+  id: string
+  contentRequestId: string | null
+  templateId: string
+  provider: string
+  model: string
+  title: string
+  audience: string
+  durationMinutes: number
+  deliveryMode: ContentStudioDeliveryMode
+  sourceArtifactIds: string[]
+  package: ContentStudioPackage
+  reviewStatus: 'draft' | 'review-needed' | 'approved' | 'published' | 'rejected'
+  reviewOwner: string
+  reviewNotes: string
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  approvedAt: string | null
+  publishedAt: string | null
+}
+
 export type RolloutForecast = {
   weeklyNewHires: number
   autoAssignablePercent: number
@@ -323,6 +345,7 @@ export type SupervisorReportPayload = {
   assignmentAutomation: AssignmentAutomationPreview
   integrationReadiness: IntegrationReadinessItem[]
   contentDevelopmentRequests: ContentDevelopmentRequest[]
+  generatedTrainingPackages: GeneratedTrainingPackage[]
   rolloutForecast: RolloutForecast
   completionNotifications: CompletionNotificationPreview[]
   notificationQueue: NotificationQueueItem[]
@@ -427,6 +450,7 @@ export type ContentStudioDeliveryMode = 'in-person' | 'virtual' | 'hybrid'
 
 export type ContentStudioPackageInput = {
   provider?: AiDeckProvider
+  contentRequestId?: string
   templateId?: string
   topic: string
   audience: string
@@ -859,7 +883,7 @@ export async function createAiDeckOutline(input: AiDeckOutlineInput) {
 }
 
 export async function createContentStudioPackage(input: ContentStudioPackageInput) {
-  return request<{ package: ContentStudioPackage }>('/api/content-studio/packages', {
+  return request<{ package: ContentStudioPackage; generatedPackage?: GeneratedTrainingPackage | null }>('/api/content-studio/packages', {
     method: 'POST',
     body: JSON.stringify(input),
   })
@@ -885,6 +909,20 @@ export async function updateContentDevelopmentRequestStatus(
     method: 'PATCH',
     body: JSON.stringify({ status, reviewNotes }),
   })
+}
+
+export async function updateGeneratedTrainingPackageStatus(
+  packageId: string,
+  status: GeneratedTrainingPackage['reviewStatus'],
+  reviewNotes = '',
+) {
+  return request<{ generatedPackage: GeneratedTrainingPackage; supervisorReport: SupervisorReportPayload }>(
+    `/api/admin/generated-packages/${packageId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status, reviewNotes }),
+    },
+  )
 }
 
 export async function downloadAiDeckPptx(input: AiDeckOutlineInput) {

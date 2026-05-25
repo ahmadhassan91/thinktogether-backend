@@ -55,6 +55,7 @@ import {
   submitTrainingSurvey,
   updateAdminNotificationStatus,
   updateContentDevelopmentRequestStatus,
+  updateGeneratedTrainingPackageStatus,
   type AdminAuditEvent,
   type AdminCohort,
   type AdminDashboardPayload,
@@ -70,6 +71,7 @@ import {
   type ContentStudioTemplate,
   type ContentDevelopmentRequest,
   type ContentDevelopmentRequestInput,
+  type GeneratedTrainingPackage,
   type LearningPathPayload,
   type LearnerProfile,
   type NotificationQueueItem,
@@ -544,6 +546,16 @@ function App() {
               setAdminAuditEvents(auditPayload.events)
               setNotificationQueue(notificationsPayload.notifications)
             },
+            onUpdateGeneratedPackageStatus: async (packageId, status, reviewNotes) => {
+              const payload = await updateGeneratedTrainingPackageStatus(packageId, status, reviewNotes)
+              const [auditPayload, notificationsPayload] = await Promise.all([
+                getAdminAuditEvents(),
+                getAdminNotifications(),
+              ])
+              setSupervisorReport(payload.supervisorReport)
+              setAdminAuditEvents(auditPayload.events)
+              setNotificationQueue(notificationsPayload.notifications)
+            },
             onUpdateNotificationStatus: async (notificationId, status) => {
               const payload = await updateAdminNotificationStatus(notificationId, status)
               setNotificationQueue((items) => items.map((item) => (item.id === notificationId ? payload.notification : item)))
@@ -619,6 +631,7 @@ function renderView({
   onCreateCohort,
   onCreateContentRequest,
   onUpdateContentRequestStatus,
+  onUpdateGeneratedPackageStatus,
   onUpdateNotificationStatus,
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
@@ -652,6 +665,11 @@ function renderView({
   onUpdateContentRequestStatus: (
     requestId: string,
     status: ContentDevelopmentRequest['status'],
+    reviewNotes: string,
+  ) => Promise<void>
+  onUpdateGeneratedPackageStatus: (
+    packageId: string,
+    status: GeneratedTrainingPackage['reviewStatus'],
     reviewNotes: string,
   ) => Promise<void>
   onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
@@ -707,6 +725,7 @@ function renderView({
         cohorts={adminCohorts}
         onCreateContentRequest={onCreateContentRequest}
         onUpdateContentRequestStatus={onUpdateContentRequestStatus}
+        onUpdateGeneratedPackageStatus={onUpdateGeneratedPackageStatus}
         onUpdateNotificationStatus={onUpdateNotificationStatus}
         onDownloadExport={onDownloadExport}
       />
@@ -847,6 +866,7 @@ function SupervisorReportingPanel({
   cohorts,
   onCreateContentRequest,
   onUpdateContentRequestStatus,
+  onUpdateGeneratedPackageStatus,
   onUpdateNotificationStatus,
   onDownloadExport,
 }: {
@@ -859,6 +879,11 @@ function SupervisorReportingPanel({
   onUpdateContentRequestStatus: (
     requestId: string,
     status: ContentDevelopmentRequest['status'],
+    reviewNotes: string,
+  ) => Promise<void>
+  onUpdateGeneratedPackageStatus: (
+    packageId: string,
+    status: GeneratedTrainingPackage['reviewStatus'],
     reviewNotes: string,
   ) => Promise<void>
   onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
@@ -890,6 +915,8 @@ function SupervisorReportingPanel({
   const [assignmentError, setAssignmentError] = useState('')
   const [notificationSavingId, setNotificationSavingId] = useState('')
   const [notificationError, setNotificationError] = useState('')
+  const [packageGeneratingId, setPackageGeneratingId] = useState('')
+  const [packageReviewSavingId, setPackageReviewSavingId] = useState('')
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
   const cohortGroups = supervisorReport?.groups?.cohorts ?? []
@@ -899,6 +926,7 @@ function SupervisorReportingPanel({
   const assignmentAutomation = supervisorReport?.assignmentAutomation
   const integrationReadiness = supervisorReport?.integrationReadiness ?? []
   const contentRequests = supervisorReport?.contentDevelopmentRequests ?? []
+  const generatedPackages = supervisorReport?.generatedTrainingPackages ?? []
   const rolloutForecast = supervisorReport?.rolloutForecast
   const notificationPreviews = supervisorReport?.completionNotifications ?? []
   const queuedNotifications = notificationQueue.filter((item) => item.status === 'queued' || item.status === 'draft')
@@ -982,6 +1010,47 @@ function SupervisorReportingPanel({
       setContentRequestError(error instanceof Error ? error.message : 'Unable to update content request')
     } finally {
       setContentRequestSaving(false)
+    }
+  }
+
+  const generatePackageForRequest = async (item: ContentDevelopmentRequest) => {
+    setPackageGeneratingId(item.id)
+    setContentRequestError('')
+    try {
+      const templateId = item.deliveryMode === 'virtual'
+        ? 'virtual-makeup-path'
+        : item.request.toLowerCase().includes('template')
+          ? 'trainer-template-system'
+          : 'core-in-person-training'
+      await createContentStudioPackage({
+        provider: 'openai',
+        contentRequestId: item.id,
+        templateId,
+        topic: item.request,
+        audience: item.audience,
+        durationMinutes: item.deliveryMode === 'virtual' ? 35 : 45,
+        deliveryMode: item.deliveryMode,
+        sourceArtifactIds: item.artifactsNeeded,
+      })
+      await onUpdateContentRequestStatus(item.id, 'draft-ready', `AI training package generated for review from request ${item.id}.`)
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to generate training package')
+    } finally {
+      setPackageGeneratingId('')
+    }
+  }
+
+  const advanceGeneratedPackage = async (item: GeneratedTrainingPackage) => {
+    const nextStatus = nextGeneratedPackageStatus(item.reviewStatus)
+    if (!nextStatus) return
+    setPackageReviewSavingId(item.id)
+    setContentRequestError('')
+    try {
+      await onUpdateGeneratedPackageStatus(item.id, nextStatus, generatedPackageNextNote(nextStatus))
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to update generated package')
+    } finally {
+      setPackageReviewSavingId('')
     }
   }
 
@@ -1374,6 +1443,19 @@ function SupervisorReportingPanel({
                     <p>{item.outputs.join(' + ')}</p>
                     <small>Owner: {item.reviewOwner}</small>
                     {item.reviewNotes ? <p>{item.reviewNotes}</p> : null}
+                    <small>
+                      Packages: {generatedPackages.filter((packageItem) => packageItem.contentRequestId === item.id).length}
+                    </small>
+                    {item.status !== 'published' ? (
+                      <button
+                        className="button-secondary"
+                        type="button"
+                        disabled={packageGeneratingId === item.id || contentRequestSaving}
+                        onClick={() => void generatePackageForRequest(item)}
+                      >
+                        {packageGeneratingId === item.id ? 'Generating package...' : 'Generate AI package'}
+                      </button>
+                    ) : null}
                     {nextContentRequestStatus(item.status) ? (
                       <button
                         className="button-secondary"
@@ -1390,6 +1472,64 @@ function SupervisorReportingPanel({
                 ))}
               </div>
             </article>
+          </section>
+          <section className="reporting-view__table" aria-labelledby="generated-package-title">
+            <div className="reporting-view__section-heading">
+              <div>
+                <p className="app-hero__label">Content development</p>
+                <h2 id="generated-package-title">Generated package review board</h2>
+                <p>Durable AI drafts linked to intake requests. Reviewers can gate, approve, and publish before assignment.</p>
+              </div>
+              <span>{generatedPackages.length} drafts</span>
+            </div>
+            {generatedPackages.length ? (
+              <table className="reporting-table reporting-table--packages">
+                <thead>
+                  <tr>
+                    <th>Package</th>
+                    <th>Outputs</th>
+                    <th>Review</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {generatedPackages.slice(0, 8).map((item) => (
+                    <tr key={item.id}>
+                      <td data-label="Package">
+                        <strong>{item.title}</strong>
+                        <small>{item.audience} · {item.deliveryMode} · {item.durationMinutes} min</small>
+                        <small>{item.provider} · {item.model}</small>
+                      </td>
+                      <td data-label="Outputs">
+                        <small>{item.package.template.requiredOutputs.join(' + ')}</small>
+                        <small>{item.sourceArtifactIds.length} source artifacts</small>
+                      </td>
+                      <td data-label="Review">
+                        <span className="reporting-chip" data-status={item.reviewStatus}>{item.reviewStatus.replace(/-/g, ' ')}</span>
+                        <small>{item.reviewOwner}</small>
+                        <small>{item.reviewNotes}</small>
+                      </td>
+                      <td data-label="Actions">
+                        {nextGeneratedPackageStatus(item.reviewStatus) ? (
+                          <button
+                            className="button-secondary"
+                            disabled={packageReviewSavingId === item.id}
+                            onClick={() => void advanceGeneratedPackage(item)}
+                            type="button"
+                          >
+                            {nextGeneratedPackageActionLabel(item.reviewStatus)}
+                          </button>
+                        ) : (
+                          <small>Published to content library release flow.</small>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p>No generated packages are saved yet. Use “Generate AI package” on a content request to create the first reviewable draft.</p>
+            )}
           </section>
           {supervisorGroups.length || facilitatorGroups.length ? (
             <section className="reporting-view__table" aria-labelledby="supervisor-groups-title">
@@ -1481,6 +1621,36 @@ function contentRequestNextNote(status: ContentDevelopmentRequest['status']) {
   if (status === 'approved') return 'Approved by training reviewer for pilot use.'
   if (status === 'published') return 'Published for rollout planning and assignment.'
   return ''
+}
+
+function nextGeneratedPackageStatus(status: GeneratedTrainingPackage['reviewStatus']): GeneratedTrainingPackage['reviewStatus'] | null {
+  if (status === 'draft') return 'review-needed'
+  if (status === 'review-needed') return 'approved'
+  if (status === 'approved') return 'published'
+  return null
+}
+
+function nextGeneratedPackageActionLabel(status: GeneratedTrainingPackage['reviewStatus']) {
+  if (status === 'draft') return 'Send to review'
+  if (status === 'review-needed') return 'Approve package'
+  if (status === 'approved') return 'Publish package'
+  return 'Updated'
+}
+
+function generatedPackageNextNote(status: GeneratedTrainingPackage['reviewStatus']) {
+  if (status === 'review-needed') {
+    return 'AI draft queued for human review; verify objectives, application, knowledge checks, and resources.'
+  }
+  if (status === 'approved') {
+    return 'Package approved by review owner; ready for publish and assignment planning.'
+  }
+  if (status === 'published') {
+    return 'Published training package; ready to attach to cohorts, makeup paths, and supervisor reporting.'
+  }
+  if (status === 'rejected') {
+    return 'Package rejected; revise prompt, source map, and trainer guidance before review.'
+  }
+  return 'Package status advanced.'
 }
 
 function supervisorNextAction(learner: SupervisorReportPayload['groups']['supervisors'][number]['learners'][number]) {

@@ -890,6 +890,7 @@ describe.sequential('Think Together training API', () => {
       { id: '008_auto_assignment_rules', name: 'Phase 2 auto-assignment rules' },
       { id: '009_notification_queue', name: 'Phase 2 notification queue' },
       { id: '010_content_library_versions', name: 'Phase 2 content library versioning' },
+      { id: '011_generated_training_packages', name: 'Phase 2 generated training package reviews' },
     ]);
 
     const sourceLibrary = await request(handle.app)
@@ -1026,6 +1027,89 @@ describe.sequential('Think Together training API', () => {
         }),
       ]),
     );
+
+    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const trainingPackage = await request(handle.app)
+      .post('/api/content-studio/packages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        contentRequestId: created.body.request.id,
+        templateId: 'virtual-makeup-path',
+        topic: 'Rapid virtual makeup training for missed PBIS sessions',
+        audience: 'New hires and regional supervisors',
+        durationMinutes: 35,
+        deliveryMode: 'virtual',
+        sourceArtifactIds: ['sop-program-induction', 'pbis-ppt-master'],
+      })
+      .expect(201);
+
+    expect(trainingPackage.body.generatedPackage).toEqual(
+      expect.objectContaining({
+        contentRequestId: created.body.request.id,
+        reviewStatus: 'draft',
+        templateId: 'virtual-makeup-path',
+        title: 'Rapid virtual makeup training for missed PBIS sessions',
+      }),
+    );
+
+    const afterPackage = await request(handle.app)
+      .get('/api/admin/supervisor-report')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(afterPackage.body.generatedTrainingPackages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: trainingPackage.body.generatedPackage.id,
+          contentRequestId: created.body.request.id,
+          reviewStatus: 'draft',
+        }),
+      ]),
+    );
+    expect(afterPackage.body.contentDevelopmentRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.body.request.id,
+          status: 'draft-ready',
+        }),
+      ]),
+    );
+
+    const review = await request(handle.app)
+      .patch(`/api/admin/generated-packages/${trainingPackage.body.generatedPackage.id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        status: 'review-needed',
+        reviewNotes: 'AI draft queued for human review.',
+      })
+      .expect(200);
+
+    expect(review.body.generatedPackage).toMatchObject({
+      id: trainingPackage.body.generatedPackage.id,
+      reviewStatus: 'review-needed',
+      reviewNotes: 'AI draft queued for human review.',
+    });
+    expect(review.body.supervisorReport.contentDevelopmentRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.body.request.id,
+          status: 'review-needed',
+        }),
+      ]),
+    );
+
+    if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
+    else delete process.env.GEMINI_API_KEY;
+    if (previousOpenAiKey) process.env.OPENAI_API_KEY = previousOpenAiKey;
+    else delete process.env.OPENAI_API_KEY;
+    if (previousAnthropicKey) process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
+    else delete process.env.ANTHROPIC_API_KEY;
 
     await request(handle.app)
       .patch(`/api/admin/content-requests/${created.body.request.id}/status`)

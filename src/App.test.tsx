@@ -23,6 +23,54 @@ beforeEach(() => {
       publishedAt: null,
     },
   ]
+  const generatedTrainingPackage = {
+    id: 'generated-package-1',
+    contentRequestId: 'behavior-management-request',
+    templateId: 'core-in-person-training',
+    provider: 'deterministic',
+    model: 'content-studio-fallback-v1',
+    title: 'Behavior management training not already in the catalog',
+    audience: 'Program staff and site leaders',
+    durationMinutes: 45,
+    deliveryMode: 'hybrid',
+    sourceArtifactIds: ['PBIS PPT Master'],
+    package: {
+      provider: 'deterministic',
+      model: 'content-studio-fallback-v1',
+      template: {
+        id: 'core-in-person-training',
+        name: 'Core In-Person Training',
+        requiredOutputs: ['Facilitator deck', 'Knowledge check'],
+        reviewChecklist: ['Objectives are measurable'],
+      },
+      title: 'Behavior management training not already in the catalog',
+      audience: 'Program staff and site leaders',
+      durationMinutes: 45,
+      learningObjectives: [],
+      deckOutline: [],
+      knowledgeCheckQuestions: [],
+      practiceActivity: {
+        title: 'Practice lab',
+        instructions: [],
+        facilitatorPrompt: '',
+        successCriteria: [],
+        sourceRefs: [],
+      },
+      facilitatorGuideNotes: [],
+      learnerHandout: { summary: '', resourceList: [] },
+      deliveryNotes: { inPerson: [], virtual: [] },
+      sourceArtifacts: ['PBIS PPT Master.pptx'],
+      generatedAt: '2026-05-24T00:00:00.000Z',
+    },
+    reviewStatus: 'draft',
+    reviewOwner: 'Program Training & Development',
+    reviewNotes: 'AI draft generated.',
+    createdBy: 'admin-1',
+    createdAt: '2026-05-24T00:00:00.000Z',
+    updatedAt: '2026-05-24T00:00:00.000Z',
+    approvedAt: null,
+    publishedAt: null,
+  }
   vi.stubGlobal('fetch', vi.fn(async (path: RequestInfo | URL) => {
     const url = String(path)
     if (url.endsWith('/api/me')) {
@@ -95,6 +143,7 @@ beforeEach(() => {
         },
         integrationReadiness: [],
         contentDevelopmentRequests: contentRequests,
+        generatedTrainingPackages: [generatedTrainingPackage],
         rolloutForecast: {
           weeklyNewHires: 50,
           autoAssignablePercent: 100,
@@ -173,6 +222,39 @@ beforeEach(() => {
     }
     if (url.endsWith('/api/admin/content-requests')) {
       return json({ request: contentRequests[0] })
+    }
+    if (url.endsWith('/api/content-studio/packages')) {
+      return json({
+        package: generatedTrainingPackage.package,
+        generatedPackage: generatedTrainingPackage,
+      })
+    }
+    if (url.includes('/api/admin/generated-packages/')) {
+      return json({
+        generatedPackage: { ...generatedTrainingPackage, reviewStatus: 'review-needed' },
+        supervisorReport: {
+          generatedAt: '2026-05-24T00:00:00.000Z',
+          groups: { supervisors: [], facilitators: [], cohorts: [] },
+          actionQueue: [],
+          assignmentAutomation: {
+            rules: [],
+            readyForPilot: true,
+            nextIntegration: 'Pilot weekly roster import before API sync.',
+          },
+          integrationReadiness: [],
+          contentDevelopmentRequests: contentRequests,
+          generatedTrainingPackages: [{ ...generatedTrainingPackage, reviewStatus: 'review-needed' }],
+          rolloutForecast: {
+            weeklyNewHires: 50,
+            autoAssignablePercent: 100,
+            supervisorDigestRecipients: 1,
+            lmsRowsReady: 0,
+            estimatedTrainerHoursSaved: 12,
+          },
+          completionNotifications: [],
+          notificationQueue: [],
+        },
+      })
     }
     if (url.includes('/api/admin/content-requests/')) {
       contentRequests[0] = { ...contentRequests[0], status: 'draft-ready', reviewNotes: 'Draft package is ready.' }
@@ -339,7 +421,9 @@ describe('App', () => {
     expect(screen.getByText('Review needed: Behavior management training')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Content request pipeline' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add content request' })).toBeInTheDocument()
-    expect(screen.getByText('Behavior management training not already in the catalog')).toBeInTheDocument()
+    expect(screen.getAllByText('Behavior management training not already in the catalog').length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: 'Generated package review board' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send to review' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Roadmap' }))
     expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()

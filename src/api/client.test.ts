@@ -21,6 +21,7 @@ import {
   storeToken,
   submitTrainingSurvey,
   updateAdminNotificationStatus,
+  updateGeneratedTrainingPackageStatus,
 } from './client'
 
 const fetchMock = vi.fn()
@@ -487,11 +488,33 @@ describe('admin management client', () => {
         sourceArtifacts: [],
         generatedAt: '2026-05-21T00:00:00.000Z',
       },
+      generatedPackage: {
+        id: 'generated-package-1',
+        contentRequestId: 'request-1',
+        templateId: 'core-in-person-training',
+        provider: 'deterministic',
+        model: 'content-studio-fallback-v1',
+        title: 'PBIS practice lab',
+        audience: 'Program leaders',
+        durationMinutes: 60,
+        deliveryMode: 'hybrid',
+        sourceArtifactIds: ['pbis-ppt-master'],
+        package: {},
+        reviewStatus: 'draft',
+        reviewOwner: 'Program Training & Development',
+        reviewNotes: 'AI draft generated.',
+        createdBy: 'admin-1',
+        createdAt: '2026-05-21T00:00:00.000Z',
+        updatedAt: '2026-05-21T00:00:00.000Z',
+        approvedAt: null,
+        publishedAt: null,
+      },
     }))
 
     await expect(createContentStudioPackage({
       provider: 'openai',
       templateId: 'core-in-person-training',
+      contentRequestId: 'request-1',
       topic: 'PBIS practice lab',
       audience: 'Program leaders',
       durationMinutes: 60,
@@ -502,6 +525,10 @@ describe('admin management client', () => {
         title: 'PBIS practice lab',
         provider: 'deterministic',
       },
+      generatedPackage: {
+        id: 'generated-package-1',
+        reviewStatus: 'draft',
+      },
     })
 
     const packageInit = fetchMock.mock.calls[0][1] as RequestInit
@@ -510,6 +537,7 @@ describe('admin management client', () => {
     expect(packageInit.body).toBe(JSON.stringify({
       provider: 'openai',
       templateId: 'core-in-person-training',
+      contentRequestId: 'request-1',
       topic: 'PBIS practice lab',
       audience: 'Program leaders',
       durationMinutes: 60,
@@ -517,6 +545,55 @@ describe('admin management client', () => {
       sourceArtifactIds: ['pbis-ppt-master'],
     }))
     expect((packageInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+  })
+
+  it('updates generated training package review status with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock.mockResolvedValueOnce(json({
+      generatedPackage: {
+        id: 'generated-package-1',
+        reviewStatus: 'review-needed',
+        reviewNotes: 'Queued for review.',
+      },
+      supervisorReport: {
+        generatedAt: '2026-05-24T00:00:00.000Z',
+        groups: { supervisors: [], facilitators: [], cohorts: [] },
+        actionQueue: [],
+        assignmentAutomation: { rules: [], readyForPilot: true, nextIntegration: '' },
+        integrationReadiness: [],
+        contentDevelopmentRequests: [],
+        generatedTrainingPackages: [],
+        rolloutForecast: {
+          weeklyNewHires: 50,
+          autoAssignablePercent: 100,
+          supervisorDigestRecipients: 1,
+          lmsRowsReady: 0,
+          estimatedTrainerHoursSaved: 12,
+        },
+        completionNotifications: [],
+        notificationQueue: [],
+      },
+    }))
+
+    await expect(updateGeneratedTrainingPackageStatus(
+      'generated-package-1',
+      'review-needed',
+      'Queued for review.',
+    )).resolves.toMatchObject({
+      generatedPackage: {
+        id: 'generated-package-1',
+        reviewStatus: 'review-needed',
+      },
+    })
+
+    const updateInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/generated-packages/generated-package-1/status')
+    expect(updateInit.method).toBe('PATCH')
+    expect(updateInit.body).toBe(JSON.stringify({
+      status: 'review-needed',
+      reviewNotes: 'Queued for review.',
+    }))
+    expect((updateInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 
   it('loads Content Studio reusable templates with auth headers', async () => {

@@ -10,6 +10,7 @@ import {
   generateDeckOutline,
   getContentStudioTemplates,
   getAiProviderStatuses,
+  type ContentStudioPackage,
   type DeckOutline,
 } from './aiDeck';
 import { createInviteToken, createSessionToken, hashPassword, hashToken, verifyPassword } from './auth';
@@ -133,6 +134,7 @@ const aiDeckOutlineSchema = z.object({
 
 const contentStudioPackageSchema = z.object({
   provider: z.enum(['gemini', 'openai', 'claude']).optional(),
+  contentRequestId: z.string().trim().min(1).optional(),
   templateId: z.string().trim().min(1).optional(),
   topic: z.string().trim().min(8).max(180),
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
@@ -155,6 +157,11 @@ const adminContentRequestSchema = z.object({
 
 const adminContentRequestStatusSchema = z.object({
   status: contentRequestStatusSchema,
+  reviewNotes: z.string().trim().max(1200).default(''),
+});
+
+const generatedPackageReviewSchema = z.object({
+  status: z.enum(['review-needed', 'approved', 'published', 'rejected']),
   reviewNotes: z.string().trim().max(1200).default(''),
 });
 
@@ -954,10 +961,17 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
 
   app.post('/api/content-studio/packages', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
     const payload = contentStudioPackageSchema.parse(req.body);
+    const contentRequest = payload.contentRequestId
+      ? await readContentDevelopmentRequestRow(db, payload.contentRequestId)
+      : undefined;
+    if (payload.contentRequestId && !contentRequest) return res.status(404).json({ error: 'Content request not found' });
 
     try {
       const trainingPackage = await generateContentStudioPackage(payload);
-      await recordAuditEvent(db, req.user, 'content_studio_package.generated', 'content_studio_package', slugify(trainingPackage.title), {
+      const generatedPackage = contentRequest
+        ? await persistGeneratedTrainingPackage(db, contentRequest, trainingPackage, payload, req.user)
+        : null;
+      await recordAuditEvent(db, req.user, 'content_studio_package.generated', 'content_studio_package', generatedPackage?.id ?? slugify(trainingPackage.title), {
         provider: trainingPackage.provider,
         model: trainingPackage.model,
         topic: payload.topic,
@@ -965,12 +979,49 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
         deliveryMode: payload.deliveryMode,
         durationMinutes: payload.durationMinutes,
         sourceArtifactIds: payload.sourceArtifactIds,
+        contentRequestId: payload.contentRequestId ?? null,
+        generatedPackageId: generatedPackage?.id ?? null,
       });
-      res.status(201).json({ package: trainingPackage });
+      res.status(201).json({ package: trainingPackage, generatedPackage });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Content Studio package generation failed';
       res.status(502).json({ error: message });
     }
+  });
+
+  app.patch('/api/admin/generated-packages/:packageId/status', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = generatedPackageReviewSchema.parse(req.body);
+    const now = new Date().toISOString();
+    const result = await db.query(
+      `UPDATE generated_training_packages
+       SET review_status = $2,
+           review_notes = CASE WHEN $3 = '' THEN review_notes ELSE $3 END,
+           updated_at = $4,
+           approved_at = CASE WHEN $2 = 'approved' THEN $4::timestamptz ELSE approved_at END,
+           published_at = CASE WHEN $2 = 'published' THEN $4::timestamptz ELSE published_at END
+       WHERE id = $1
+       RETURNING *`,
+      [String(req.params.packageId), payload.status, payload.reviewNotes, now],
+    );
+    const packageRow = result.rows[0] as GeneratedTrainingPackageRow | undefined;
+    if (!packageRow) return res.status(404).json({ error: 'Generated package not found' });
+
+    if (packageRow.content_request_id) {
+      const requestStatus = generatedPackageStatusToContentRequestStatus(packageRow.review_status);
+      if (requestStatus) {
+        await setContentRequestStatus(db, packageRow.content_request_id, requestStatus, packageRow.review_notes, req.user);
+      }
+    }
+
+    await recordAuditEvent(db, req.user, 'generated_package.status_updated', 'generated_package', packageRow.id, {
+      status: payload.status,
+      contentRequestId: packageRow.content_request_id,
+    });
+
+    res.json({
+      generatedPackage: mapGeneratedTrainingPackage(packageRow),
+      supervisorReport: await readSupervisorReport(db),
+    });
   });
 
   app.post('/api/ai/deck-outline', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
@@ -1493,6 +1544,7 @@ async function readSupervisorReport(db: AppDatabase) {
 
   const learners = (result.rows as SupervisorReportRow[]).map(mapSupervisorReportLearner);
   const contentDevelopmentRequests = await readContentDevelopmentRequests(db);
+  const generatedTrainingPackages = await readGeneratedTrainingPackages(db);
   const notificationQueue = await readNotificationQueue(db);
   return {
     generatedAt: new Date().toISOString(),
@@ -1505,6 +1557,7 @@ async function readSupervisorReport(db: AppDatabase) {
     assignmentAutomation: await buildAssignmentAutomationPreview(db, learners),
     integrationReadiness: buildIntegrationReadiness(learners),
     contentDevelopmentRequests,
+    generatedTrainingPackages,
     notificationQueue,
     rolloutForecast: buildRolloutForecast(learners),
     completionNotifications: buildCompletionNotificationPreviews(learners),
@@ -1866,6 +1919,11 @@ async function readContentDevelopmentRequests(db: AppDatabase) {
   return (result.rows as ContentDevelopmentRequestRow[]).map(mapContentDevelopmentRequest);
 }
 
+async function readContentDevelopmentRequestRow(db: AppDatabase, requestId: string) {
+  const result = await db.query('SELECT * FROM content_development_requests WHERE id = $1', [requestId]);
+  return result.rows[0] as ContentDevelopmentRequestRow | undefined;
+}
+
 function mapContentDevelopmentRequest(row: ContentDevelopmentRequestRow) {
   return {
     id: row.id,
@@ -1882,6 +1940,140 @@ function mapContentDevelopmentRequest(row: ContentDevelopmentRequestRow) {
     approvedAt: row.approved_at?.toISOString() ?? null,
     publishedAt: row.published_at?.toISOString() ?? null,
   };
+}
+
+async function readGeneratedTrainingPackages(db: AppDatabase) {
+  const result = await db.query(
+    `SELECT *
+     FROM generated_training_packages
+     ORDER BY
+       CASE review_status
+        WHEN 'review-needed' THEN 0
+        WHEN 'draft' THEN 1
+        WHEN 'approved' THEN 2
+        WHEN 'published' THEN 3
+        ELSE 4
+       END,
+       updated_at DESC`,
+  );
+  return (result.rows as GeneratedTrainingPackageRow[]).map(mapGeneratedTrainingPackage);
+}
+
+function mapGeneratedTrainingPackage(row: GeneratedTrainingPackageRow) {
+  return {
+    id: row.id,
+    contentRequestId: row.content_request_id,
+    templateId: row.template_id,
+    provider: row.provider,
+    model: row.model,
+    title: row.title,
+    audience: row.audience,
+    durationMinutes: row.duration_minutes,
+    deliveryMode: row.delivery_mode,
+    sourceArtifactIds: row.source_artifact_ids,
+    package: row.package_payload,
+    reviewStatus: row.review_status,
+    reviewOwner: row.review_owner,
+    reviewNotes: row.review_notes,
+    createdBy: row.created_by,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    approvedAt: row.approved_at?.toISOString() ?? null,
+    publishedAt: row.published_at?.toISOString() ?? null,
+  };
+}
+
+async function persistGeneratedTrainingPackage(
+  db: AppDatabase,
+  contentRequest: ContentDevelopmentRequestRow,
+  trainingPackage: ContentStudioPackage,
+  request: z.infer<typeof contentStudioPackageSchema>,
+  actor: User | undefined,
+) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const reviewNotes = `AI draft generated from ${trainingPackage.sourceArtifacts.length} source artifacts. Human review required before facilitation.`;
+  const result = await db.transaction(async (client) => {
+    const inserted = await client.query(
+      `INSERT INTO generated_training_packages
+        (id, content_request_id, template_id, provider, model, title, audience,
+         duration_minutes, delivery_mode, source_artifact_ids, package_payload,
+         review_status, review_owner, review_notes, created_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+               'draft', $12, $13, $14, $15, $15)
+       RETURNING *`,
+      [
+        id,
+        contentRequest.id,
+        trainingPackage.template.id,
+        trainingPackage.provider,
+        trainingPackage.model,
+        trainingPackage.title,
+        trainingPackage.audience,
+        trainingPackage.durationMinutes,
+        request.deliveryMode,
+        JSON.stringify(trainingPackage.sourceArtifacts),
+        JSON.stringify(trainingPackage),
+        contentRequest.review_owner,
+        reviewNotes,
+        actor?.id ?? null,
+        now,
+      ],
+    );
+
+    await client.query(
+      `UPDATE content_development_requests
+       SET status = 'draft-ready',
+           review_notes = $2,
+           updated_at = $3
+       WHERE id = $1`,
+      [
+        contentRequest.id,
+        `${contentRequest.review_notes ? `${contentRequest.review_notes} ` : ''}Draft package ${id} generated and ready for review.`,
+        now,
+      ],
+    );
+
+    return inserted.rows[0] as GeneratedTrainingPackageRow;
+  });
+
+  return mapGeneratedTrainingPackage(result);
+}
+
+async function setContentRequestStatus(
+  db: AppDatabase,
+  requestId: string,
+  status: ContentDevelopmentRequestRow['status'],
+  reviewNotes: string,
+  actor: User | undefined,
+) {
+  const now = new Date().toISOString();
+  const result = await db.query(
+    `UPDATE content_development_requests
+     SET status = $2,
+         review_notes = CASE WHEN $3 = '' THEN review_notes ELSE $3 END,
+         updated_at = $4,
+         approved_at = CASE WHEN $2 = 'approved' THEN $4::timestamptz ELSE approved_at END,
+         published_at = CASE WHEN $2 = 'published' THEN $4::timestamptz ELSE published_at END
+     WHERE id = $1
+     RETURNING *`,
+    [requestId, status, reviewNotes, now],
+  );
+  const row = result.rows[0] as ContentDevelopmentRequestRow | undefined;
+  if (!row) return undefined;
+  if (row.status === 'approved' || row.status === 'published') {
+    await syncContentLibraryVersionForRequest(db, row, actor);
+  }
+  await enqueueContentRequestNotification(db, row, actor);
+  return row;
+}
+
+function generatedPackageStatusToContentRequestStatus(status: GeneratedTrainingPackageRow['review_status']) {
+  if (status === 'review-needed') return 'review-needed' as const;
+  if (status === 'approved') return 'approved' as const;
+  if (status === 'published') return 'published' as const;
+  if (status === 'rejected') return 'draft-ready' as const;
+  return null;
 }
 
 async function readContentLibraryVersions(db: AppDatabase) {
@@ -2899,6 +3091,28 @@ type ContentLibraryVersionRow = {
   review_notes: string;
   created_by: string | null;
   created_at: Date;
+  approved_at: Date | null;
+  published_at: Date | null;
+};
+
+type GeneratedTrainingPackageRow = {
+  id: string;
+  content_request_id: string | null;
+  template_id: string;
+  provider: string;
+  model: string;
+  title: string;
+  audience: string;
+  duration_minutes: number;
+  delivery_mode: 'in-person' | 'virtual' | 'hybrid';
+  source_artifact_ids: string[];
+  package_payload: ContentStudioPackage;
+  review_status: 'draft' | 'review-needed' | 'approved' | 'published' | 'rejected';
+  review_owner: string;
+  review_notes: string;
+  created_by: string | null;
+  created_at: Date;
+  updated_at: Date;
   approved_at: Date | null;
   published_at: Date | null;
 };

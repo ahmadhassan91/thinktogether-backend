@@ -81,6 +81,7 @@ async function dropAll(db: AppDatabase) {
       admin_audit_events,
       notification_queue,
       content_library_versions,
+      generated_training_packages,
       content_development_requests,
       clearance_records,
       attendance_records,
@@ -103,6 +104,7 @@ async function dropAll(db: AppDatabase) {
       _admin_audit_events,
       _notification_queue,
       _content_library_versions,
+      _generated_training_packages,
       _content_development_requests,
       _clearance_records,
       _attendance_records,
@@ -551,6 +553,38 @@ const migrations = [
       ON content_library_versions(status, created_at DESC);
     CREATE INDEX IF NOT EXISTS content_library_versions_request_idx
       ON content_library_versions(content_request_id);
+  `,
+  },
+  {
+    id: '011_generated_training_packages',
+    name: 'Phase 2 generated training package reviews',
+    sql: `
+    CREATE TABLE IF NOT EXISTS generated_training_packages (
+      id TEXT PRIMARY KEY,
+      content_request_id TEXT REFERENCES content_development_requests(id) ON DELETE SET NULL,
+      template_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      title TEXT NOT NULL,
+      audience TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+      delivery_mode TEXT NOT NULL CHECK (delivery_mode IN ('in-person', 'virtual', 'hybrid')),
+      source_artifact_ids JSONB NOT NULL,
+      package_payload JSONB NOT NULL,
+      review_status TEXT NOT NULL CHECK (review_status IN ('draft', 'review-needed', 'approved', 'published', 'rejected')),
+      review_owner TEXT NOT NULL,
+      review_notes TEXT NOT NULL DEFAULT '',
+      created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      approved_at TIMESTAMPTZ,
+      published_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS generated_training_packages_request_idx
+      ON generated_training_packages(content_request_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS generated_training_packages_review_idx
+      ON generated_training_packages(review_status, updated_at DESC);
   `,
   },
 ] satisfies Array<{ id: string; name: string; sql: string }>;
