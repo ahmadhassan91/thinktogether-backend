@@ -1276,6 +1276,30 @@ describe.sequential('Think Together training API', () => {
     expect(response.body.sourceBasis).toEqual(expect.arrayContaining([expect.stringContaining('PBIS PPT Master.pptx')]));
   });
 
+  it('synthesizes direct Site Lead make-up guidance before listing sources', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+
+    const response = await request(handle.app)
+      .post('/api/knowledge-assistant/answer')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ question: 'What happens if a Site Lead misses a session?' })
+      .expect(200);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        answer: expect.stringContaining('Week 4 make-up sessions'),
+        confidence: 'Source-backed',
+        status: 'answered',
+      }),
+    );
+    expect(response.body.answer).toContain('Regional Supervisors');
+    expect(response.body.answer).toContain('LMS reminders');
+    expect(response.body.sourceBasis).toEqual(
+      expect.arrayContaining([expect.stringContaining('SOP_Site Lead Onboarding.pdf')]),
+    );
+  });
+
   it('returns not found when knowledge assistant evidence is weak', async () => {
     handle = await boot();
     const token = await loginToken(handle);
