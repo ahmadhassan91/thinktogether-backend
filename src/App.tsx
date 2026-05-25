@@ -887,7 +887,7 @@ function SupervisorReportingPanel({
     reviewNotes: string,
   ) => Promise<void>
   onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
-  onDownloadExport?: (kind: 'supervisor-digest') => Promise<void> | void
+  onDownloadExport?: (kind: 'supervisor-digest' | 'content-operations') => Promise<void> | void
 }) {
   const sampleRosterCsv = [
     'First Name,Last Name,Email,Employee ID,Title,Region,Site,Supervisor,Hire Date',
@@ -969,6 +969,17 @@ function SupervisorReportingPanel({
       await onDownloadExport('supervisor-digest')
     } catch (error) {
       setReportExportError(error instanceof Error ? error.message : 'Unable to download supervisor digest')
+    }
+  }
+
+  const handleDownloadContentOperations = async () => {
+    if (!onDownloadExport) return
+
+    setReportExportError('')
+    try {
+      await onDownloadExport('content-operations')
+    } catch (error) {
+      setReportExportError(error instanceof Error ? error.message : 'Unable to download content operations export')
     }
   }
 
@@ -1119,6 +1130,9 @@ function SupervisorReportingPanel({
               )}
               <button className="button-secondary" type="button" onClick={() => void handleDownloadSupervisorDigest()}>
                 Download supervisor digest CSV
+              </button>
+              <button className="button-secondary" type="button" onClick={() => void handleDownloadContentOperations()}>
+                Download content operations CSV
               </button>
               {reportExportError ? <p role="alert">{reportExportError}</p> : null}
             </article>

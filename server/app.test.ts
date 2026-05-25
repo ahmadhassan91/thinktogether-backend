@@ -1104,6 +1104,16 @@ describe.sequential('Think Together training API', () => {
       ]),
     );
 
+    const contentOperationsExport = await request(handle.app)
+      .get('/api/admin/exports/content-operations.csv')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(contentOperationsExport.headers['content-disposition']).toContain('think-content-operations-export.csv');
+    expect(contentOperationsExport.text).toContain('row_type,content_request_id,generated_package_id,title');
+    expect(contentOperationsExport.text).toContain(created.body.request.id);
+    expect(contentOperationsExport.text).toContain(trainingPackage.body.generatedPackage.id);
+    expect(contentOperationsExport.text).toContain('generated_package');
+
     if (previousGeminiKey) process.env.GEMINI_API_KEY = previousGeminiKey;
     else delete process.env.GEMINI_API_KEY;
     if (previousOpenAiKey) process.env.OPENAI_API_KEY = previousOpenAiKey;

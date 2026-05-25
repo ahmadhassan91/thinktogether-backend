@@ -418,6 +418,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
     expect(screen.getByLabelText('Supervisor reporting metrics')).toHaveTextContent('clearance-ready')
     expect(screen.getByRole('heading', { name: 'Notification queue' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download content operations CSV' })).toBeInTheDocument()
     expect(screen.getByText('Review needed: Behavior management training')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Content request pipeline' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add content request' })).toBeInTheDocument()

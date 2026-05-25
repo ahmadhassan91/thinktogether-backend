@@ -136,9 +136,11 @@ describe('AdminDashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Download clearance-ready CSV' }))
     fireEvent.click(screen.getByRole('button', { name: 'Download completions CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download content operations CSV' }))
 
     expect(onDownloadExport).toHaveBeenNthCalledWith(1, 'clearance')
     expect(onDownloadExport).toHaveBeenNthCalledWith(2, 'completions')
+    expect(onDownloadExport).toHaveBeenNthCalledWith(3, 'content-operations')
   })
 
   it('renders management forms and calls supplied create handlers', async () => {

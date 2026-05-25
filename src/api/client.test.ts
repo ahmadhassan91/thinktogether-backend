@@ -207,6 +207,25 @@ describe('admin management client', () => {
     expect(click).toHaveBeenCalled()
   })
 
+  it('downloads the content operations export with auth headers', async () => {
+    storeToken('admin-token')
+    const anchor = document.createElement('a')
+    const click = vi.spyOn(anchor, 'click').mockImplementation(() => undefined)
+    vi.spyOn(document, 'createElement').mockReturnValue(anchor)
+    fetchMock.mockResolvedValueOnce(new Response('row_type,content_request_id\ncontent_request,request-1\n', {
+      status: 200,
+      headers: { 'content-type': 'text/csv' },
+    }))
+
+    await downloadAdminExport('content-operations')
+
+    const exportInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/exports/content-operations.csv')
+    expect((exportInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+    expect(anchor.download).toBe('think-content-operations-export.csv')
+    expect(click).toHaveBeenCalled()
+  })
+
   it('loads assignment rules and posts roster preview CSV with auth headers', async () => {
     storeToken('admin-token')
     fetchMock

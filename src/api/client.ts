@@ -34,7 +34,7 @@ export type AuthSession = {
 }
 
 export type InviteStatus = 'not_invited' | 'not_sent' | 'pending' | 'accepted' | 'expired' | 'revoked'
-export type AdminExportKind = 'clearance' | 'completions' | 'supervisor-digest'
+export type AdminExportKind = 'clearance' | 'completions' | 'supervisor-digest' | 'content-operations'
 
 export type LearnerInvite = {
   learnerId: string
@@ -800,6 +800,10 @@ export async function downloadAdminExport(kind: AdminExportKind) {
     'supervisor-digest': {
       path: '/api/admin/exports/supervisor-digest.csv',
       filename: 'think-supervisor-digest.csv',
+    },
+    'content-operations': {
+      path: '/api/admin/exports/content-operations.csv',
+      filename: 'think-content-operations-export.csv',
     },
   } satisfies Record<AdminExportKind, { path: string; filename: string }>
   const { path, filename } = exportConfig[kind]

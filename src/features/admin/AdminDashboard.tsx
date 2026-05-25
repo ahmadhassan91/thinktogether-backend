@@ -452,6 +452,9 @@ export function AdminDashboard({
             <button onClick={() => void handleDownloadExport('supervisor-digest')} type="button">
               Download supervisor digest CSV
             </button>
+            <button onClick={() => void handleDownloadExport('content-operations')} type="button">
+              Download content operations CSV
+            </button>
           </div>
           {exportError ? <p role="alert">{exportError}</p> : null}
         </section>

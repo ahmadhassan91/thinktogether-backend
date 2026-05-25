@@ -795,6 +795,12 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     sendCsv(res, 'think-supervisor-digest.csv', rows, supervisorDigestExportHeaders);
   });
 
+  app.get('/api/admin/exports/content-operations.csv', authenticate, requireAdmin, async (_req, res) => {
+    const report = await readSupervisorReport(db);
+    const rows = buildContentOperationsExportRows(report);
+    sendCsv(res, 'think-content-operations-export.csv', rows, contentOperationsExportHeaders);
+  });
+
   app.get('/api/admin/learners', authenticate, requireAdmin, async (_req, res) => {
     const result = await db.query(adminLearnersQuery());
     res.json({ learners: (result.rows as AdminLearnerRow[]).map(mapAdminLearner) });
@@ -1901,6 +1907,72 @@ function buildSupervisorDigestExportRows(report: SupervisorReportPayload) {
   return [...actionRows, ...notificationRows];
 }
 
+function buildContentOperationsExportRows(report: SupervisorReportPayload) {
+  const generatedAt = report.generatedAt;
+  const packagesByRequest = new Map<string, typeof report.generatedTrainingPackages>();
+  for (const item of report.generatedTrainingPackages) {
+    if (!item.contentRequestId) continue;
+    const list = packagesByRequest.get(item.contentRequestId) ?? [];
+    list.push(item);
+    packagesByRequest.set(item.contentRequestId, list);
+  }
+
+  const requestRows = report.contentDevelopmentRequests.map((item) => {
+    const packages = packagesByRequest.get(item.id) ?? [];
+    return {
+      generated_at: generatedAt,
+      row_type: 'content_request',
+      content_request_id: item.id,
+      generated_package_id: '',
+      title: item.request,
+      audience: item.audience,
+      delivery_mode: item.deliveryMode,
+      request_status: item.status,
+      package_status: '',
+      review_owner: item.reviewOwner,
+      review_notes: item.reviewNotes,
+      outputs: item.outputs.join('; '),
+      source_artifacts: item.artifactsNeeded.join('; '),
+      template_id: '',
+      provider: '',
+      model: '',
+      required_outputs: '',
+      package_count: packages.length,
+      created_at: item.createdAt,
+      updated_at: item.updatedAt,
+      approved_at: item.approvedAt ?? '',
+      published_at: item.publishedAt ?? '',
+    };
+  });
+
+  const packageRows = report.generatedTrainingPackages.map((item) => ({
+    generated_at: generatedAt,
+    row_type: 'generated_package',
+    content_request_id: item.contentRequestId ?? '',
+    generated_package_id: item.id,
+    title: item.title,
+    audience: item.audience,
+    delivery_mode: item.deliveryMode,
+    request_status: report.contentDevelopmentRequests.find((requestItem) => requestItem.id === item.contentRequestId)?.status ?? '',
+    package_status: item.reviewStatus,
+    review_owner: item.reviewOwner,
+    review_notes: item.reviewNotes,
+    outputs: item.package.template.requiredOutputs.join('; '),
+    source_artifacts: item.sourceArtifactIds.join('; '),
+    template_id: item.templateId,
+    provider: item.provider,
+    model: item.model,
+    required_outputs: item.package.template.requiredOutputs.join('; '),
+    package_count: '',
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+    approved_at: item.approvedAt ?? '',
+    published_at: item.publishedAt ?? '',
+  }));
+
+  return [...requestRows, ...packageRows];
+}
+
 async function readContentDevelopmentRequests(db: AppDatabase) {
   const result = await db.query(
     `SELECT *
@@ -2775,6 +2847,31 @@ const supervisorDigestExportHeaders = [
   'subject',
   'message',
   'exported_to_lms',
+];
+
+const contentOperationsExportHeaders = [
+  'generated_at',
+  'row_type',
+  'content_request_id',
+  'generated_package_id',
+  'title',
+  'audience',
+  'delivery_mode',
+  'request_status',
+  'package_status',
+  'review_owner',
+  'review_notes',
+  'outputs',
+  'source_artifacts',
+  'template_id',
+  'provider',
+  'model',
+  'required_outputs',
+  'package_count',
+  'created_at',
+  'updated_at',
+  'approved_at',
+  'published_at',
 ];
 
 function toCsv(rows: Array<Record<string, unknown>>, headers = rows[0] ? Object.keys(rows[0]) : []) {
