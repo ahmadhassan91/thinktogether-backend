@@ -384,8 +384,8 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('navigation', { name: /MVP workspace/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Supervisor Center' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
   })
 
   it('switches between learner, coach, admin, users, cohorts, deck, reporting, and plan views', async () => {
@@ -398,8 +398,8 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next official scenario' }))
     expect(screen.getByRole('heading', { name: 'Physical Fight During Transition' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
-    expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Supervisor Center' }))
+    expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Learners' }))
     expect(screen.getByRole('heading', { name: 'Learners and Invites' })).toBeInTheDocument()
@@ -407,30 +407,31 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cohorts' }))
     expect(screen.getByRole('heading', { name: 'Cohorts and Assignments' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Deck Studio' }))
-    expect(await screen.findByRole('heading', { name: 'Training Deck Studio' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Curriculum Studio' }))
+    expect((await screen.findAllByRole('heading', { name: 'Curriculum Studio' })).length).toBeGreaterThan(0)
     expect(await screen.findByLabelText('Template')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Virtual Makeup Path/i })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Virtual Makeup Path/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Generate preview' }))
     expect(await screen.findByRole('heading', { name: 'Effective Lesson Delivery' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reporting' }))
-    expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Supervisor reporting metrics')).toHaveTextContent('clearance-ready')
-    expect(screen.getByRole('heading', { name: 'Notification queue' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Download content operations CSV' })).toBeInTheDocument()
-    expect(screen.getByText('Review needed: Behavior management training')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Intake Pipeline' }))
     expect(screen.getByRole('heading', { name: 'Content request pipeline' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add content request' })).toBeInTheDocument()
     expect(screen.getAllByText('Behavior management training not already in the catalog').length).toBeGreaterThan(0)
-    expect(screen.getByRole('heading', { name: 'Generated package review board' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI Drafts' }))
+    expect(screen.getByRole('heading', { name: 'Generated drafts' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send to review' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Supervisor Center' }))
+    expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Supervisor reporting metrics')).toHaveTextContent('clearance-ready')
 
     fireEvent.click(screen.getByRole('button', { name: 'Roadmap' }))
     expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Content Library Releases' })).toBeInTheDocument()
     expect(screen.getByText('Shared Think Together artifact baseline')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Training Deck Studio' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Curriculum Studio' })).not.toBeInTheDocument()
   })
 
   it('uses learner profile from getMe and skips admin calls for learner users', async () => {

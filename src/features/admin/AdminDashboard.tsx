@@ -1,19 +1,23 @@
-import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
+import { useMemo, useState, useEffect, type CSSProperties, type FormEvent } from 'react'
 import {
   computeTrainingKpis,
   filterParticipants,
   type ParticipantStatus,
   type TrainingParticipant,
 } from './adminMetrics'
-import type {
-  AdminCohort,
-  AdminCohortInput,
-  AdminAuditEvent,
-  AdminDashboardPayload,
-  AdminExportKind,
-  AdminLearner,
-  AdminLearnerInput,
-  LearnerInvite,
+import {
+  previewAssignmentCsv,
+  getAutoAssignmentRules,
+  type AdminCohort,
+  type AdminCohortInput,
+  type AdminAuditEvent,
+  type AdminDashboardPayload,
+  type AdminExportKind,
+  type AdminLearner,
+  type AdminLearnerInput,
+  type LearnerInvite,
+  type AutoAssignmentRule,
+  type AssignmentPreviewPayload,
 } from '../../api/client'
 
 export type AdminDashboardProps = {
@@ -28,6 +32,7 @@ export type AdminDashboardProps = {
   onCreateLearnerInvite?: (learnerId: string) => Promise<LearnerInvite> | LearnerInvite
   onRevokeLearnerInvite?: (learnerId: string) => Promise<void> | void
   onDownloadExport?: (kind: AdminExportKind) => Promise<void> | void
+  targetId?: string
 }
 
 const statusLabels: Record<ParticipantStatus, string> = {
@@ -81,6 +86,7 @@ export function AdminDashboard({
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
+  targetId,
 }: AdminDashboardProps) {
   const [region, setRegion] = useState('all')
   const [status, setStatus] = useState<ParticipantStatus | 'all'>('all')
@@ -95,6 +101,47 @@ export function AdminDashboard({
     'all',
   )
   const [learnerRiskFilter, setLearnerRiskFilter] = useState<'all' | 'unassigned_cohort' | 'unassigned_path'>('all')
+
+  const [subTab, setSubTab] = useState<'roster' | 'import' | 'rules'>(() =>
+    mode === 'users' && targetId === 'assignment-preview-title' ? 'import' : 'roster',
+  )
+  const [assignmentCsv, setAssignmentCsv] = useState(`First Name,Last Name,Email,Employee ID,Title,Region,Site,Supervisor,Hire Date
+Jordan,Rivera,jordan.rivera@thinktogether.local,EMP-1042,Program Leader,Emerging Region,East Bay Site,Regional Supervisor A,2026-06-03
+Sam,Patel,sam.patel@thinktogether.local,EMP-1043,Site Lead,Emerging Region,North Valley Site,Regional Supervisor B,2026-06-03
+Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Region,,Regional Supervisor B,2026-06-03`)
+  const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreviewPayload | null>(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [assignmentError, setAssignmentError] = useState('')
+  const [assignmentRules, setAssignmentRules] = useState<AutoAssignmentRule[]>([])
+
+  useEffect(() => {
+    if (mode === 'users') {
+      let ignore = false
+      void (async () => {
+        try {
+          const payload = await getAutoAssignmentRules()
+          if (!ignore) setAssignmentRules(payload.rules)
+        } catch {
+          if (!ignore) setAssignmentRules([])
+        }
+      })()
+      return () => {
+        ignore = true
+      }
+    }
+  }, [mode])
+
+  const handleAssignmentPreview = async () => {
+    setAssignmentLoading(true)
+    setAssignmentError('')
+    try {
+      setAssignmentPreview(await previewAssignmentCsv(assignmentCsv))
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Unable to preview roster assignments')
+    } finally {
+      setAssignmentLoading(false)
+    }
+  }
 
   const filteredParticipants = useMemo(
     () => filterParticipants(participants, { region, status, cohort }),
@@ -552,6 +599,64 @@ export function AdminDashboard({
               ? 'Create learner records, connect them to a cohort, then generate invite links when the roster is ready.'
               : 'Set the session name, region, primary facilitator, learning path, and start time without needing to paste raw system IDs.'}
           </p>
+
+          {showUsers ? (
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid #cbd5e1', marginBottom: '1.25rem', paddingBottom: '0.25rem' }}>
+              <button
+                aria-selected={subTab === 'roster'}
+                onClick={() => setSubTab('roster')}
+                style={{
+                  background: subTab === 'roster' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  borderBottom: subTab === 'roster' ? '2px solid #2563eb' : 'none',
+                  color: subTab === 'roster' ? '#2563eb' : '#4b5563',
+                  cursor: 'pointer',
+                  fontWeight: subTab === 'roster' ? 'bold' : 'normal',
+                  padding: '0.4rem 0.75rem',
+                  borderRadius: '4px 4px 0 0',
+                }}
+                type="button"
+              >
+                Active Roster
+              </button>
+              <button
+                aria-selected={subTab === 'import'}
+                onClick={() => setSubTab('import')}
+                style={{
+                  background: subTab === 'import' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  borderBottom: subTab === 'import' ? '2px solid #2563eb' : 'none',
+                  color: subTab === 'import' ? '#2563eb' : '#4b5563',
+                  cursor: 'pointer',
+                  fontWeight: subTab === 'import' ? 'bold' : 'normal',
+                  padding: '0.4rem 0.75rem',
+                  borderRadius: '4px 4px 0 0',
+                }}
+                type="button"
+              >
+                Bulk CSV Import
+              </button>
+              <button
+                aria-selected={subTab === 'rules'}
+                onClick={() => setSubTab('rules')}
+                style={{
+                  background: subTab === 'rules' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  borderBottom: subTab === 'rules' ? '2px solid #2563eb' : 'none',
+                  color: subTab === 'rules' ? '#2563eb' : '#4b5563',
+                  cursor: 'pointer',
+                  fontWeight: subTab === 'rules' ? 'bold' : 'normal',
+                  padding: '0.4rem 0.75rem',
+                  borderRadius: '4px 4px 0 0',
+                }}
+                type="button"
+              >
+                Auto-Assignment Rules
+              </button>
+            </div>
+          ) : null}
+
+          {(!showUsers || subTab === 'roster') ? (
           <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
             {showUsers && onCreateLearner ? (
               <form aria-label="Create learner" onSubmit={handleLearnerSubmit}>
@@ -687,6 +792,7 @@ export function AdminDashboard({
               </form>
             ) : null}
           </div>
+          ) : null}
 
           {showCohorts ? (
             <div style={{ marginTop: '1rem' }}>
@@ -731,7 +837,7 @@ export function AdminDashboard({
             </div>
           ) : null}
 
-          {showUsers && learners.length ? (
+          {showUsers && subTab === 'roster' && learners.length ? (
             <div style={{ marginTop: '1rem' }}>
               <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Managed learners</h3>
               <div
@@ -858,10 +964,138 @@ export function AdminDashboard({
               ) : null}
               {inviteError ? <p role="alert">{inviteError}</p> : null}
             </div>
-          ) : showUsers ? (
+          ) : showUsers && subTab === 'roster' ? (
             <p style={{ color: '#657184', margin: '1rem 0 0' }}>
               No managed learners are available yet. Add a learner to start issuing invites.
             </p>
+          ) : null}
+
+          {showUsers && subTab === 'import' ? (
+            <div style={{ marginTop: '1rem' }}>
+              <h3 id="assignment-preview-title" style={{ fontSize: '1.1rem', margin: '0 0 0.5rem' }}>Weekly roster assignment preview</h3>
+              <p style={{ color: '#657184', margin: '0 0 1rem' }}>
+                Paste the latest ADP/HR CSV below to dry-run path assignment rules, supervisor group binding, and record missing site indicators.
+              </p>
+              
+              <label style={{ display: 'block', margin: '1rem 0' }}>
+                <span style={{ fontWeight: 600 }}>Paste weekly HR/ADP roster CSV</span>
+                <textarea
+                  aria-label="CSV input"
+                  value={assignmentCsv}
+                  onChange={(e) => setAssignmentCsv(e.target.value)}
+                  rows={8}
+                  style={{ display: 'block', width: '100%', marginTop: '0.5rem', fontFamily: 'monospace', fontSize: '0.9rem', padding: '0.5rem', borderRadius: 4, border: '1px solid #cbd5e1' }}
+                  spellCheck={false}
+                />
+              </label>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                <button
+                  type="button"
+                  onClick={handleAssignmentPreview}
+                  disabled={assignmentLoading}
+                >
+                  {assignmentLoading ? 'Processing CSV...' : 'Preview assignments'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssignmentCsv(`First Name,Last Name,Email,Employee ID,Title,Region,Site,Supervisor,Hire Date
+Jordan,Rivera,jordan.rivera@thinktogether.local,EMP-1042,Program Leader,Emerging Region,East Bay Site,Regional Supervisor A,2026-06-03
+Sam,Patel,sam.patel@thinktogether.local,EMP-1043,Site Lead,Emerging Region,North Valley Site,Regional Supervisor B,2026-06-03
+Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Region,,Regional Supervisor B,2026-06-03`)}
+                  style={{ background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db' }}
+                >
+                  Use sample roster
+                </button>
+              </div>
+
+              {assignmentError ? (
+                <div style={{ color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '0.75rem', borderRadius: 4, marginBottom: '1rem' }} role="alert">
+                  {assignmentError}
+                </div>
+              ) : null}
+
+              {assignmentPreview ? (
+                <div>
+                  <h4 style={{ fontSize: '1rem', margin: '0 0 0.50rem' }}>Roster Preview Results ({assignmentPreview.summary.totalRows} rows matched)</h4>
+                  <div className="admin-table-wrap">
+                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                      <thead>
+                        <tr>
+                          {['Row', 'Employee', 'Matched Path', 'Assigned Supervisor', 'Region & Site', 'Automation Action', 'System Flags'].map((h) => (
+                            <th key={h} style={{ borderBottom: '1px solid #cbd5e1', padding: '0.6rem' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {assignmentPreview.rows.map((row, idx) => (
+                          <tr key={idx}>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{row.rowNumber}</td>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                              <strong>{row.learner.firstName} {row.learner.lastName}</strong>
+                              <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{row.learner.email} • {row.learner.employeeId}</div>
+                            </td>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                              {row.suggestedAssignment?.pathIds[0] ? formatLearningPathId(row.suggestedAssignment.pathIds[0]) : <span style={{ color: '#dc2626', fontWeight: 600 }}>Unmatched</span>}
+                            </td>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{row.learner.supervisor || <span style={{ color: '#6b7280' }}>None</span>}</td>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                              {row.learner.region || 'Unassigned'}
+                              <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{row.learner.site || 'No Site'}</div>
+                            </td>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                              <span style={{ ...chipStyle, background: row.inviteAction === 'queue_invite' ? '#ecfdf3' : '#eff6ff' }}>
+                                {row.inviteAction === 'queue_invite' ? 'Create & Invite' : 'Merge Record'}
+                              </span>
+                            </td>
+                            <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                {row.reviewReasons.map((flag) => (
+                                  <span key={flag} style={{ ...chipStyle, background: '#fef2f2', color: '#991b1b', fontSize: '0.7rem' }}>{flag}</span>
+                                ))}
+                                {!row.reviewReasons.length ? <span style={{ color: '#10b981', fontSize: '0.8rem' }}>✓ Clean</span> : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showUsers && subTab === 'rules' ? (
+            <div style={{ marginTop: '1rem' }}>
+              <h3 style={{ fontSize: '1.1rem', margin: '0 0 0.5rem' }}>Auto-assignment rules</h3>
+              <p style={{ color: '#657184', margin: '0 0 1.25rem' }}>
+                The rules below run automatically when new hire records are imported. They dynamically match titles, regions, and sites.
+              </p>
+              {assignmentRules.length ? (
+                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+                  {assignmentRules.map((rule) => (
+                    <div key={rule.id} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: '1rem', background: '#f9fafb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <strong style={{ fontSize: '1.0rem' }}>{rule.name}</strong>
+                        <span style={{ ...chipStyle, background: rule.active ? '#ecfdf3' : '#f3f4f6', color: rule.active ? '#047857' : '#4b5563' }}>
+                          {rule.active ? 'Active' : 'Draft'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.9rem', color: '#4b5563', margin: '0 0 0.75rem' }}>
+                        <strong>Trigger:</strong> matches title <code>{rule.matchCriteria.titleKeywords.join(', ')}</code> in region <code>{rule.cohort.region || 'Any'}</code>.
+                      </p>
+                      <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                        <div><strong>Auto assigns:</strong> {formatLearningPathId(rule.pathIds[0] || '')}</div>
+                        <div style={{ marginTop: '0.25rem' }}><strong>Evaluation Priority:</strong> {rule.priority}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: '#657184' }}>No active rules found. Set up title matching in your source configuration.</p>
+              )}
+            </div>
           ) : null}
         </section>
       ) : null}

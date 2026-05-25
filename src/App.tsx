@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
   BookOpen,
@@ -6,11 +6,9 @@ import {
   CalendarDays,
   Dumbbell,
   FileText,
-  LayoutDashboard,
   Map,
   Menu,
   Presentation,
-  Upload,
   UserPlus,
   Users,
   X,
@@ -39,7 +37,6 @@ import {
   getAdminSupervisorReport,
   getAiProviders,
   getContentStudioTemplates,
-  getAutoAssignmentRules,
   getLearningPath,
   getMe,
   getProgress,
@@ -47,21 +44,17 @@ import {
   getSourceLibrary,
   getSourceUsageSummary,
   login,
-  previewAssignmentCsv,
   readStoredToken,
   revokeLearnerInvite,
   scoreScenario,
   searchSourceIntelligence,
   submitTrainingSurvey,
-  updateAdminNotificationStatus,
   updateContentDevelopmentRequestStatus,
   updateGeneratedTrainingPackageStatus,
   type AdminAuditEvent,
   type AdminCohort,
   type AdminDashboardPayload,
   type AdminLearner,
-  type AssignmentPreviewPayload,
-  type AutoAssignmentRule,
   type AiDeckOutline,
   type AiDeckProvider,
   type AiProviderStatus,
@@ -69,18 +62,17 @@ import {
   type ContentStudioPackage,
   type ContentStudioDeliveryMode,
   type ContentStudioTemplate,
-  type ContentDevelopmentRequest,
-  type ContentDevelopmentRequestInput,
-  type GeneratedTrainingPackage,
   type LearningPathPayload,
   type LearnerProfile,
-  type NotificationQueueItem,
   type SourceLibraryPayload,
   type SourceQaFlagsPayload,
   type SourceSearchPayload,
   type SourceUsageSummaryPayload,
   type SupervisorReportPayload,
   type ProgressPayload,
+  type ContentDevelopmentRequest,
+  type ContentDevelopmentRequestInput,
+  type GeneratedTrainingPackage,
 } from './api/client'
 import { StatusChip } from './components/StatusChip'
 import { getMilestonesByPhase } from './data/mvpMilestones'
@@ -105,11 +97,10 @@ const navItems: NavItem[] = [
   { view: 'learner', label: 'Learn', section: 'Learning', description: 'Assigned path and checks', Icon: BookOpen },
   { view: 'practice', label: 'Practice', section: 'Learning', description: 'Official scenario coaching', Icon: Dumbbell },
   { view: 'assist', label: 'Ask AI', section: 'Learning', description: 'Source-grounded answers', Icon: BotMessageSquare },
-  { view: 'admin', label: 'Dashboard', section: 'Operations', description: 'Readiness and exports', Icon: LayoutDashboard },
-  { view: 'users', label: 'Learners', section: 'Operations', description: 'Add users and invites', Icon: Users },
+  { view: 'reporting', label: 'Supervisor Center', section: 'Operations', description: 'Supervisor operations panel', Icon: BarChart3 },
+  { view: 'users', label: 'Learners', section: 'Operations', description: 'Roster, import & assignment', Icon: Users },
   { view: 'cohorts', label: 'Cohorts', section: 'Operations', description: 'Sessions and assignments', Icon: CalendarDays },
-  { view: 'deck', label: 'Deck Studio', section: 'Operations', description: 'Training package drafts', Icon: Presentation },
-  { view: 'reporting', label: 'Reporting', section: 'Operations', description: 'Supervisor and roster view', Icon: BarChart3 },
+  { view: 'deck', label: 'Curriculum Studio', section: 'Operations', description: 'Draft review & Slide Studio', Icon: Presentation },
   { view: 'plan', label: 'Roadmap', section: 'Planning', description: 'MVP and Phase 2 scope', Icon: Map },
 ]
 
@@ -130,7 +121,6 @@ function App() {
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
   const [dashboard, setDashboard] = useState<AdminDashboardPayload | null>(null)
   const [supervisorReport, setSupervisorReport] = useState<SupervisorReportPayload | null>(null)
-  const [notificationQueue, setNotificationQueue] = useState<NotificationQueueItem[]>([])
   const [adminLearners, setAdminLearners] = useState<AdminLearner[]>([])
   const [adminCohorts, setAdminCohorts] = useState<AdminCohort[]>([])
   const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>([])
@@ -140,6 +130,7 @@ function App() {
   const [selectedScenarioId, setSelectedScenarioId] = useState('')
   const [loadError, setLoadError] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [workspaceTargetId, setWorkspaceTargetId] = useState<string | undefined>(undefined)
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get('invite'), [])
 
   const refreshWorkspace = useCallback(async (currentUser: AuthUser) => {
@@ -157,7 +148,6 @@ function App() {
         auditPayload,
         usagePayload,
         qaFlagsPayload,
-        notificationsPayload,
       ] = await Promise.all([
         getAdminDashboard(),
         getAdminSupervisorReport(),
@@ -170,7 +160,6 @@ function App() {
       ])
       setDashboard(dashboardPayload)
       setSupervisorReport(supervisorReportPayload)
-      setNotificationQueue(notificationsPayload.notifications)
       setAdminLearners(learnersPayload.learners)
       setAdminCohorts(cohortsPayload.cohorts)
       setAdminAuditEvents(auditPayload.events)
@@ -179,7 +168,6 @@ function App() {
     } else {
       setDashboard(null)
       setSupervisorReport(null)
-      setNotificationQueue([])
       setAdminLearners([])
       setAdminCohorts([])
       setAdminAuditEvents([])
@@ -198,7 +186,7 @@ function App() {
         const me = await getMe()
         setUser(me.user)
         setLearner(me.user.role === 'learner' ? toLearnerIdentity(me.user, me.learner ?? undefined) : null)
-        setView(me.user.role === 'admin' ? 'admin' : 'learner')
+        setView(me.user.role === 'admin' ? 'reporting' : 'learner')
         await refreshWorkspace(me.user)
       } catch (caught) {
         setLoadError(caught instanceof Error ? caught.message : 'Unable to load workspace.')
@@ -222,7 +210,7 @@ function App() {
   const activeSectionLabel = user?.role === 'admin'
     ? activeViewItem?.section ?? 'Workspace'
     : 'Program Induction PBIS'
-  const showQuickActions = user?.role === 'admin' ? view === 'admin' : view === 'learner'
+  const showQuickActions = user?.role === 'admin' ? view === 'reporting' : view === 'learner'
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -233,7 +221,7 @@ function App() {
       const me = auth.user.role === 'learner' ? await getMe() : { user: auth.user }
       setUser(me.user)
       setLearner(me.user.role === 'learner' ? toLearnerIdentity(me.user, me.learner ?? undefined) : null)
-      setView(me.user.role === 'admin' ? 'admin' : 'learner')
+      setView(me.user.role === 'admin' ? 'reporting' : 'learner')
       await refreshWorkspace(me.user)
     } catch (caught) {
       setAuthError(caught instanceof Error ? caught.message : 'Unable to sign in.')
@@ -250,7 +238,6 @@ function App() {
     setProgress(null)
     setDashboard(null)
     setSupervisorReport(null)
-    setNotificationQueue([])
     setAdminLearners([])
     setAdminCohorts([])
     setAdminAuditEvents([])
@@ -258,9 +245,48 @@ function App() {
     setSourceQaFlags(null)
   }
 
+  const handleCreateContentRequest = useCallback(async (input: ContentDevelopmentRequestInput) => {
+    await createContentDevelopmentRequest(input)
+    const [reportPayload, auditPayload] = await Promise.all([
+      getAdminSupervisorReport(),
+      getAdminAuditEvents(),
+    ])
+    setSupervisorReport(reportPayload)
+    setAdminAuditEvents(auditPayload.events)
+  }, [])
+
+  const handleUpdateContentRequestStatus = useCallback(async (
+    requestId: string,
+    status: ContentDevelopmentRequest['status'],
+    reviewNotes: string,
+  ) => {
+    await updateContentDevelopmentRequestStatus(requestId, status, reviewNotes)
+    const [reportPayload, auditPayload] = await Promise.all([
+      getAdminSupervisorReport(),
+      getAdminAuditEvents(),
+    ])
+    setSupervisorReport(reportPayload)
+    setAdminAuditEvents(auditPayload.events)
+  }, [])
+
+  const handleUpdateGeneratedPackageStatus = useCallback(async (
+    packageId: string,
+    status: GeneratedTrainingPackage['reviewStatus'],
+    reviewNotes: string,
+  ) => {
+    await updateGeneratedTrainingPackageStatus(packageId, status, reviewNotes)
+    const [reportPayload, auditPayload] = await Promise.all([
+      getAdminSupervisorReport(),
+      getAdminAuditEvents(),
+    ])
+    setSupervisorReport(reportPayload)
+    setAdminAuditEvents(auditPayload.events)
+  }, [])
+
   const handleWorkspaceNavigate = (nextView: WorkspaceView, targetId?: string) => {
     setView(adminOnlyViews.includes(nextView) && user?.role !== 'admin' ? 'learner' : nextView)
     setMobileNavOpen(false)
+    setWorkspaceTargetId(targetId)
     if (!targetId) return
 
     window.setTimeout(() => {
@@ -456,24 +482,27 @@ function App() {
           <div className="app-content">
             <WorkspaceHelper view={view} isAdmin={user.role === 'admin'} />
             {renderView({
-            view,
-            learnerModules,
-            coachScenario,
-            coachScenarios,
-            progress,
-            dashboard,
-            supervisorReport,
-            notificationQueue,
-            adminLearners,
-            adminCohorts,
-            adminAuditEvents,
-            learner: learner ?? toLearnerIdentity(user),
-            isAdmin: user.role === 'admin',
-            contentVersion: content.path.contentVersion,
-            sourceLibrary,
-            sourceUsageSummary,
-            sourceQaFlags,
-            onSelectScenario: setSelectedScenarioId,
+             view,
+             learnerModules,
+             coachScenario,
+             coachScenarios,
+             progress,
+             dashboard,
+             supervisorReport,
+             adminLearners,
+             adminCohorts,
+             adminAuditEvents,
+             learner: learner ?? toLearnerIdentity(user),
+             isAdmin: user.role === 'admin',
+             contentVersion: content.path.contentVersion,
+             sourceLibrary,
+             sourceUsageSummary,
+             sourceQaFlags,
+             targetId: workspaceTargetId,
+             onCreateContentRequest: handleCreateContentRequest,
+             onUpdateContentRequestStatus: handleUpdateContentRequestStatus,
+             onUpdateGeneratedPackageStatus: handleUpdateGeneratedPackageStatus,
+             onSelectScenario: setSelectedScenarioId,
             onNextScenario: () => {
               setSelectedScenarioId((currentId) => {
                 const currentIndex = coachScenarios.findIndex((scenario) => scenario.id === currentId)
@@ -526,46 +555,6 @@ function App() {
               setSupervisorReport(supervisorReportPayload)
               setAdminAuditEvents(auditPayload.events)
             },
-            onCreateContentRequest: async (input) => {
-              await createContentDevelopmentRequest(input)
-              const [supervisorReportPayload, auditPayload] = await Promise.all([
-                getAdminSupervisorReport(),
-                getAdminAuditEvents(),
-              ])
-              setSupervisorReport(supervisorReportPayload)
-              setAdminAuditEvents(auditPayload.events)
-            },
-            onUpdateContentRequestStatus: async (requestId, status, reviewNotes) => {
-              await updateContentDevelopmentRequestStatus(requestId, status, reviewNotes)
-              const [supervisorReportPayload, auditPayload, notificationsPayload] = await Promise.all([
-                getAdminSupervisorReport(),
-                getAdminAuditEvents(),
-                getAdminNotifications(),
-              ])
-              setSupervisorReport(supervisorReportPayload)
-              setAdminAuditEvents(auditPayload.events)
-              setNotificationQueue(notificationsPayload.notifications)
-            },
-            onUpdateGeneratedPackageStatus: async (packageId, status, reviewNotes) => {
-              const payload = await updateGeneratedTrainingPackageStatus(packageId, status, reviewNotes)
-              const [auditPayload, notificationsPayload] = await Promise.all([
-                getAdminAuditEvents(),
-                getAdminNotifications(),
-              ])
-              setSupervisorReport(payload.supervisorReport)
-              setAdminAuditEvents(auditPayload.events)
-              setNotificationQueue(notificationsPayload.notifications)
-            },
-            onUpdateNotificationStatus: async (notificationId, status) => {
-              const payload = await updateAdminNotificationStatus(notificationId, status)
-              setNotificationQueue((items) => items.map((item) => (item.id === notificationId ? payload.notification : item)))
-              const [supervisorReportPayload, auditPayload] = await Promise.all([
-                getAdminSupervisorReport(),
-                getAdminAuditEvents(),
-              ])
-              setSupervisorReport(supervisorReportPayload)
-              setAdminAuditEvents(auditPayload.events)
-            },
             onCreateLearnerInvite: async (learnerId) => {
               const invitePayload = await createLearnerInvite(learnerId)
               setAdminAuditEvents((await getAdminAuditEvents()).events)
@@ -596,7 +585,7 @@ function App() {
                 setDashboard(dashboardPayload)
                 setSupervisorReport(supervisorReportPayload)
               }
-            },
+            }
             })}
           </div>
         </div>
@@ -613,7 +602,6 @@ function renderView({
   progress,
   dashboard,
   supervisorReport,
-  notificationQueue,
   adminLearners,
   adminCohorts,
   adminAuditEvents,
@@ -629,14 +617,14 @@ function renderView({
   onAnswerKnowledgeCheck,
   onCreateLearner,
   onCreateCohort,
-  onCreateContentRequest,
-  onUpdateContentRequestStatus,
-  onUpdateGeneratedPackageStatus,
-  onUpdateNotificationStatus,
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
   onSubmitSurvey,
+  targetId,
+  onCreateContentRequest,
+  onUpdateContentRequestStatus,
+  onUpdateGeneratedPackageStatus,
 }: {
   view: WorkspaceView
   learnerModules: LearnerModule[]
@@ -645,7 +633,6 @@ function renderView({
   progress: ProgressPayload
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
-  notificationQueue: NotificationQueueItem[]
   adminLearners: AdminLearner[]
   adminCohorts: AdminCohort[]
   adminAuditEvents: AdminAuditEvent[]
@@ -661,22 +648,14 @@ function renderView({
   onAnswerKnowledgeCheck: (moduleId: string, answer: string) => Promise<void>
   onCreateLearner: Parameters<typeof AdminDashboard>[0]['onCreateLearner']
   onCreateCohort: Parameters<typeof AdminDashboard>[0]['onCreateCohort']
-  onCreateContentRequest: (input: ContentDevelopmentRequestInput) => Promise<void>
-  onUpdateContentRequestStatus: (
-    requestId: string,
-    status: ContentDevelopmentRequest['status'],
-    reviewNotes: string,
-  ) => Promise<void>
-  onUpdateGeneratedPackageStatus: (
-    packageId: string,
-    status: GeneratedTrainingPackage['reviewStatus'],
-    reviewNotes: string,
-  ) => Promise<void>
-  onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
   onCreateLearnerInvite: Parameters<typeof AdminDashboard>[0]['onCreateLearnerInvite']
   onRevokeLearnerInvite: Parameters<typeof AdminDashboard>[0]['onRevokeLearnerInvite']
   onDownloadExport: Parameters<typeof AdminDashboard>[0]['onDownloadExport']
   onSubmitSurvey: (score: number, notes: string) => Promise<void>
+  targetId?: string
+  onCreateContentRequest: Parameters<typeof CurriculumStudio>[0]['onCreateContentRequest']
+  onUpdateContentRequestStatus: Parameters<typeof CurriculumStudio>[0]['onUpdateContentRequestStatus']
+  onUpdateGeneratedPackageStatus: Parameters<typeof CurriculumStudio>[0]['onUpdateGeneratedPackageStatus']
 }) {
   if (view === 'practice') {
     return (
@@ -707,12 +686,20 @@ function renderView({
         onCreateLearnerInvite={onCreateLearnerInvite}
         onRevokeLearnerInvite={onRevokeLearnerInvite}
         onDownloadExport={onDownloadExport}
+        targetId={targetId}
       />
     )
   }
 
   if (view === 'deck' && isAdmin) {
-    return <DeckStudio />
+    return (
+      <CurriculumStudio
+        supervisorReport={supervisorReport}
+        onCreateContentRequest={onCreateContentRequest}
+        onUpdateContentRequestStatus={onUpdateContentRequestStatus}
+        onUpdateGeneratedPackageStatus={onUpdateGeneratedPackageStatus}
+      />
+    )
   }
 
   if (view === 'reporting' && isAdmin) {
@@ -720,14 +707,6 @@ function renderView({
       <SupervisorReportingPanel
         dashboard={dashboard}
         supervisorReport={supervisorReport}
-        notificationQueue={notificationQueue}
-        learners={adminLearners}
-        cohorts={adminCohorts}
-        onCreateContentRequest={onCreateContentRequest}
-        onUpdateContentRequestStatus={onUpdateContentRequestStatus}
-        onUpdateGeneratedPackageStatus={onUpdateGeneratedPackageStatus}
-        onUpdateNotificationStatus={onUpdateNotificationStatus}
-        onDownloadExport={onDownloadExport}
       />
     )
   }
@@ -769,13 +748,6 @@ function WorkspaceQuickActions({
   const actions: Array<{ view: WorkspaceView; label: string; detail: string; Icon: LucideIcon; targetId?: string }> = isAdmin
     ? [
         { view: 'users', label: 'Invite learner', detail: 'Add one person or copy invite link', Icon: UserPlus },
-        {
-          view: 'reporting',
-          label: 'Preview roster',
-          detail: 'Paste weekly HR export and review assignments',
-          Icon: Upload,
-          targetId: 'assignment-preview-title',
-        },
         { view: 'deck', label: 'Create training package', detail: 'Generate deck, check, practice, and handout', Icon: Presentation },
         {
           view: 'reporting',
@@ -856,226 +828,21 @@ function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: bool
       <span>{helper.body}</span>
     </aside>
   )
-}
-
-function SupervisorReportingPanel({
+}function SupervisorReportingPanel({
   dashboard,
   supervisorReport,
-  notificationQueue,
-  learners,
-  cohorts,
-  onCreateContentRequest,
-  onUpdateContentRequestStatus,
-  onUpdateGeneratedPackageStatus,
-  onUpdateNotificationStatus,
-  onDownloadExport,
 }: {
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
-  notificationQueue: NotificationQueueItem[]
-  learners: AdminLearner[]
-  cohorts: AdminCohort[]
-  onCreateContentRequest: (input: ContentDevelopmentRequestInput) => Promise<void>
-  onUpdateContentRequestStatus: (
-    requestId: string,
-    status: ContentDevelopmentRequest['status'],
-    reviewNotes: string,
-  ) => Promise<void>
-  onUpdateGeneratedPackageStatus: (
-    packageId: string,
-    status: GeneratedTrainingPackage['reviewStatus'],
-    reviewNotes: string,
-  ) => Promise<void>
-  onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
-  onDownloadExport?: (kind: 'supervisor-digest' | 'content-operations') => Promise<void> | void
 }) {
-  const sampleRosterCsv = [
-    'First Name,Last Name,Email,Employee ID,Title,Region,Site,Supervisor,Hire Date',
-    'Jordan,Rivera,jordan.rivera@thinktogether.local,EMP-1042,Program Leader,Emerging Region,East Bay Site,Regional Supervisor A,2026-06-03',
-    'Sam,Patel,sam.patel@thinktogether.local,EMP-1043,Site Lead,Emerging Region,North Valley Site,Regional Supervisor B,2026-06-03',
-    'Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Region,,Regional Supervisor B,2026-06-03',
-  ].join('\n')
-  const [contentRequestForm, setContentRequestForm] = useState({
-    request: 'Behavior management for high-energy transitions',
-    audience: 'Program staff and site leaders',
-    deliveryMode: 'hybrid' as ContentStudioDeliveryMode,
-    artifactsNeeded: 'PBIS PPT Master; PBIS part 3 template; Knowledge check sample',
-    outputs: 'Facilitator deck; Knowledge check; Practice scenarios; Learner handout',
-    reviewOwner: 'Program Training & Development',
-    reviewNotes: 'Needs source map and human review before pilot.',
-  })
-  const [contentRequestSaving, setContentRequestSaving] = useState(false)
-  const [contentRequestError, setContentRequestError] = useState('')
-  const [reportExportError, setReportExportError] = useState('')
   const [selectedGroupId, setSelectedGroupId] = useState('')
-  const [assignmentRules, setAssignmentRules] = useState<AutoAssignmentRule[]>([])
-  const [assignmentCsv, setAssignmentCsv] = useState(sampleRosterCsv)
-  const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreviewPayload | null>(null)
-  const [assignmentLoading, setAssignmentLoading] = useState(false)
-  const [assignmentError, setAssignmentError] = useState('')
-  const [notificationSavingId, setNotificationSavingId] = useState('')
-  const [notificationError, setNotificationError] = useState('')
-  const [packageGeneratingId, setPackageGeneratingId] = useState('')
-  const [packageReviewSavingId, setPackageReviewSavingId] = useState('')
+
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
   const cohortGroups = supervisorReport?.groups?.cohorts ?? []
   const drilldownGroups = [...supervisorGroups, ...facilitatorGroups, ...cohortGroups]
   const selectedGroup = drilldownGroups.find((group) => group.id === selectedGroupId) ?? drilldownGroups[0]
   const actionQueue = supervisorReport?.actionQueue ?? []
-  const assignmentAutomation = supervisorReport?.assignmentAutomation
-  const integrationReadiness = supervisorReport?.integrationReadiness ?? []
-  const contentRequests = supervisorReport?.contentDevelopmentRequests ?? []
-  const generatedPackages = supervisorReport?.generatedTrainingPackages ?? []
-  const rolloutForecast = supervisorReport?.rolloutForecast
-  const notificationPreviews = supervisorReport?.completionNotifications ?? []
-  const queuedNotifications = notificationQueue.filter((item) => item.status === 'queued' || item.status === 'draft')
-  const sentNotifications = notificationQueue.filter((item) => item.status === 'sent')
-  const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
-  const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
-
-  useEffect(() => {
-    let ignore = false
-    void (async () => {
-      try {
-        const payload = await getAutoAssignmentRules()
-        if (!ignore) setAssignmentRules(payload.rules)
-      } catch {
-        if (!ignore) setAssignmentRules([])
-      }
-    })()
-    return () => {
-      ignore = true
-    }
-  }, [])
-
-  const handleAssignmentPreview = async () => {
-    setAssignmentLoading(true)
-    setAssignmentError('')
-    try {
-      setAssignmentPreview(await previewAssignmentCsv(assignmentCsv))
-    } catch (error) {
-      setAssignmentError(error instanceof Error ? error.message : 'Unable to preview roster assignments')
-    } finally {
-      setAssignmentLoading(false)
-    }
-  }
-
-  const handleDownloadSupervisorDigest = async () => {
-    if (!onDownloadExport) return
-
-    setReportExportError('')
-    try {
-      await onDownloadExport('supervisor-digest')
-    } catch (error) {
-      setReportExportError(error instanceof Error ? error.message : 'Unable to download supervisor digest')
-    }
-  }
-
-  const handleDownloadContentOperations = async () => {
-    if (!onDownloadExport) return
-
-    setReportExportError('')
-    try {
-      await onDownloadExport('content-operations')
-    } catch (error) {
-      setReportExportError(error instanceof Error ? error.message : 'Unable to download content operations export')
-    }
-  }
-
-  const handleContentRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setContentRequestSaving(true)
-    setContentRequestError('')
-    try {
-      await onCreateContentRequest({
-        request: contentRequestForm.request,
-        audience: contentRequestForm.audience,
-        deliveryMode: contentRequestForm.deliveryMode,
-        artifactsNeeded: splitListInput(contentRequestForm.artifactsNeeded),
-        outputs: splitListInput(contentRequestForm.outputs),
-        reviewOwner: contentRequestForm.reviewOwner,
-        reviewNotes: contentRequestForm.reviewNotes,
-      })
-      setContentRequestForm((current) => ({
-        ...current,
-        request: '',
-        reviewNotes: '',
-      }))
-    } catch (error) {
-      setContentRequestError(error instanceof Error ? error.message : 'Unable to add content request')
-    } finally {
-      setContentRequestSaving(false)
-    }
-  }
-
-  const advanceContentRequest = async (item: ContentDevelopmentRequest) => {
-    const nextStatus = nextContentRequestStatus(item.status)
-    if (!nextStatus) return
-    const note = contentRequestNextNote(nextStatus)
-    setContentRequestSaving(true)
-    setContentRequestError('')
-    try {
-      await onUpdateContentRequestStatus(item.id, nextStatus, note)
-    } catch (error) {
-      setContentRequestError(error instanceof Error ? error.message : 'Unable to update content request')
-    } finally {
-      setContentRequestSaving(false)
-    }
-  }
-
-  const generatePackageForRequest = async (item: ContentDevelopmentRequest) => {
-    setPackageGeneratingId(item.id)
-    setContentRequestError('')
-    try {
-      const templateId = item.deliveryMode === 'virtual'
-        ? 'virtual-makeup-path'
-        : item.request.toLowerCase().includes('template')
-          ? 'trainer-template-system'
-          : 'core-in-person-training'
-      await createContentStudioPackage({
-        provider: 'openai',
-        contentRequestId: item.id,
-        templateId,
-        topic: item.request,
-        audience: item.audience,
-        durationMinutes: item.deliveryMode === 'virtual' ? 35 : 45,
-        deliveryMode: item.deliveryMode,
-        sourceArtifactIds: item.artifactsNeeded,
-      })
-      await onUpdateContentRequestStatus(item.id, 'draft-ready', `AI training package generated for review from request ${item.id}.`)
-    } catch (error) {
-      setContentRequestError(error instanceof Error ? error.message : 'Unable to generate training package')
-    } finally {
-      setPackageGeneratingId('')
-    }
-  }
-
-  const advanceGeneratedPackage = async (item: GeneratedTrainingPackage) => {
-    const nextStatus = nextGeneratedPackageStatus(item.reviewStatus)
-    if (!nextStatus) return
-    setPackageReviewSavingId(item.id)
-    setContentRequestError('')
-    try {
-      await onUpdateGeneratedPackageStatus(item.id, nextStatus, generatedPackageNextNote(nextStatus))
-    } catch (error) {
-      setContentRequestError(error instanceof Error ? error.message : 'Unable to update generated package')
-    } finally {
-      setPackageReviewSavingId('')
-    }
-  }
-
-  const handleNotificationStatus = async (notificationId: string, status: NotificationQueueItem['status']) => {
-    setNotificationSavingId(notificationId)
-    setNotificationError('')
-    try {
-      await onUpdateNotificationStatus(notificationId, status)
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : 'Unable to update notification status')
-    } finally {
-      setNotificationSavingId('')
-    }
-  }
 
   return (
     <main className="reporting-view" aria-labelledby="reporting-title">
@@ -1095,231 +862,8 @@ function SupervisorReportingPanel({
             <span><strong>{dashboard.kpis.clearanceReady}</strong> clearance-ready</span>
             <span><strong>{dashboard.kpis.makeupRequired}</strong> need makeup</span>
             <span><strong>{dashboard.kpis.facilitatorRating.toFixed(1)}</strong> facilitator rating</span>
-            {rolloutForecast ? (
-              <>
-                <span><strong>{rolloutForecast.autoAssignablePercent}%</strong> auto-assignable</span>
-                <span><strong>{rolloutForecast.lmsRowsReady}</strong> LMS rows ready</span>
-                <span><strong>{rolloutForecast.estimatedTrainerHoursSaved}</strong> hrs saved/week</span>
-              </>
-            ) : null}
           </section>
-          <section className="reporting-view__grid">
-            <article>
-              <h2>Supervisor snapshot</h2>
-              <dl>
-                <div><dt>Cohorts in scope</dt><dd>{cohorts.length || dashboard.cohorts.length}</dd></div>
-                <div><dt>Pending invites</dt><dd>{pendingInvites}</dd></div>
-                <div><dt>Missing cohort</dt><dd>{missingCohorts}</dd></div>
-                <div><dt>Supervisor groups</dt><dd>{supervisorGroups.length}</dd></div>
-              </dl>
-            </article>
-            <article>
-              <h2>Completion notifications</h2>
-              {notificationPreviews.length ? (
-                <ul>
-                  {notificationPreviews.slice(0, 3).map((item) => (
-                    <li key={`${item.learnerId}-${item.pathId}`}>
-                      <strong>{item.subject}</strong>
-                      <span>{item.recipientEmail}</span>
-                      <em>{item.body}</em>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No completion notifications are waiting. Completed learners will appear here for supervisor follow-up.</p>
-              )}
-              <button className="button-secondary" type="button" onClick={() => void handleDownloadSupervisorDigest()}>
-                Download supervisor digest CSV
-              </button>
-              <button className="button-secondary" type="button" onClick={() => void handleDownloadContentOperations()}>
-                Download content operations CSV
-              </button>
-              {reportExportError ? <p role="alert">{reportExportError}</p> : null}
-            </article>
-            <article>
-              <h2>Phase 2 automation preview</h2>
-              {assignmentAutomation ? (
-                <>
-                  <p>{assignmentAutomation.nextIntegration}</p>
-                  <ul>
-                    {assignmentAutomation.rules.map((rule) => (
-                      <li key={rule.id}>
-                        <strong>{rule.assignment}</strong>
-                        <span>{rule.trigger}</span>
-                        <em>{rule.reviewGate}</em>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <p>Assignment rules appear here once supervisor reporting data is available.</p>
-              )}
-            </article>
-          </section>
-          <section className="reporting-view__table" aria-labelledby="notification-queue-title">
-            <div className="reporting-view__section-heading">
-              <div>
-                <p className="app-hero__label">Notification workflow</p>
-                <h2 id="notification-queue-title">Notification queue</h2>
-                <p>Review generated supervisor follow-ups, content review alerts, and published-training notices before email integration is switched on.</p>
-              </div>
-              <span>{queuedNotifications.length} queued · {sentNotifications.length} sent</span>
-            </div>
-            {queuedNotifications.length ? (
-              <table className="reporting-table reporting-table--notifications">
-                <thead>
-                  <tr>
-                    <th>Recipient</th>
-                    <th>Message</th>
-                    <th>Owner</th>
-                    <th>Priority</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {queuedNotifications.map((item) => (
-                    <tr key={item.id}>
-                      <td data-label="Recipient">
-                        <strong>{item.recipientName}</strong>
-                        <small>{item.recipientEmail}</small>
-                      </td>
-                      <td data-label="Message">
-                        <strong>{item.subject}</strong>
-                        <small>{item.body}</small>
-                      </td>
-                      <td data-label="Owner">{item.owner}</td>
-                      <td data-label="Priority">
-                        <span className="reporting-chip" data-priority={item.priority}>{item.priority}</span>
-                      </td>
-                      <td data-label="Actions">
-                        <div className="notification-actions">
-                          <button
-                            className="button-secondary"
-                            disabled={notificationSavingId === item.id}
-                            onClick={() => void handleNotificationStatus(item.id, 'sent')}
-                            type="button"
-                          >
-                            Mark sent
-                          </button>
-                          <button
-                            className="button-secondary"
-                            disabled={notificationSavingId === item.id}
-                            onClick={() => void handleNotificationStatus(item.id, 'dismissed')}
-                            type="button"
-                          >
-                            Dismiss
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p>No notification drafts are queued. Completion records and content review gates will create reviewable messages here.</p>
-            )}
-            {notificationError ? <p role="alert">{notificationError}</p> : null}
-          </section>
-          <section className="reporting-view__table reporting-view__table--assignment-preview" aria-labelledby="assignment-preview-title">
-            <div className="reporting-view__section-heading">
-              <div>
-                <p className="app-hero__label">Roster automation</p>
-                <h2 id="assignment-preview-title">Weekly roster assignment preview</h2>
-                <p>Paste an HR/ADP roster export, preview the automatic rules, then hold exceptions for Training Ops review.</p>
-              </div>
-              <span>{assignmentRules.filter((rule) => rule.active).length} active rules</span>
-            </div>
-            <div className="assignment-preview">
-              <div className="assignment-preview__workflow" aria-label="Roster preview workflow">
-                <span><strong>1</strong> Paste roster CSV</span>
-                <span><strong>2</strong> Match title and region rules</span>
-                <span><strong>3</strong> Queue invites or hold review</span>
-              </div>
-              <div className="assignment-preview__rules" aria-label="Auto-assignment rules">
-                {assignmentRules.map((rule) => (
-                  <article key={rule.id}>
-                    <span className="reporting-chip" data-status={rule.active ? 'ready' : 'needs_mapping'}>
-                      priority {rule.priority}
-                    </span>
-                    <strong>{rule.name}</strong>
-                    <small>{rule.matchCriteria.titleKeywords.join(', ')}</small>
-                    <p>{rule.pathTitles.join(' + ')} · {rule.cohort.name}</p>
-                    <em>{rule.reviewGate}</em>
-                  </article>
-                ))}
-              </div>
-              <label className="assignment-preview__input">
-                Paste weekly HR/ADP roster CSV
-                <textarea
-                  value={assignmentCsv}
-                  onChange={(event) => setAssignmentCsv(event.target.value)}
-                  rows={6}
-                  spellCheck={false}
-                />
-              </label>
-              <div className="assignment-preview__actions">
-                <button className="button-secondary" type="button" onClick={() => setAssignmentCsv(sampleRosterCsv)}>
-                  Use sample roster
-                </button>
-                <button type="button" onClick={() => void handleAssignmentPreview()} disabled={assignmentLoading}>
-                  {assignmentLoading ? 'Previewing roster...' : 'Preview assignments'}
-                </button>
-              </div>
-              {assignmentError ? <p role="alert">{assignmentError}</p> : null}
-              {assignmentPreview ? (
-                <div className="assignment-preview__results">
-                  <div className="assignment-preview__result-header">
-                    <div>
-                      <p className="app-hero__label">Decision preview</p>
-                      <h3>Review before invites go out</h3>
-                    </div>
-                    <span>Generated {new Date(assignmentPreview.generatedAt).toLocaleTimeString()}</span>
-                  </div>
-                  <div className="reporting-view__metrics" aria-label="Assignment preview summary">
-                    <span><strong>{assignmentPreview.summary.totalRows}</strong> roster rows</span>
-                    <span><strong>{assignmentPreview.summary.autoAssignable}</strong> auto-assign</span>
-                    <span><strong>{assignmentPreview.summary.needsReview}</strong> needs review</span>
-                    <span><strong>{assignmentPreview.summary.duplicate}</strong> duplicates</span>
-                    <span><strong>{assignmentPreview.summary.noRule}</strong> no rule</span>
-                  </div>
-                  <table className="reporting-table reporting-table--assignment">
-                    <thead>
-                      <tr>
-                        <th>Roster row</th>
-                        <th>Matched rule</th>
-                        <th>Suggested assignment</th>
-                        <th>Status</th>
-                        <th>Review reason</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assignmentPreview.rows.map((row) => (
-                        <tr key={row.rowNumber}>
-                          <td data-label="Roster row">
-                            <strong>{row.learner.firstName} {row.learner.lastName}</strong>
-                            <small>{row.learner.email || 'Email missing'}</small>
-                            <small>{row.learner.title || 'Title missing'} · {row.learner.region || 'Region pending'}</small>
-                          </td>
-                          <td data-label="Matched rule">{row.matchedRule?.name ?? 'No match'}</td>
-                          <td data-label="Suggested assignment">
-                            {row.suggestedAssignment
-                              ? `${row.suggestedAssignment.cohortName} · ${row.suggestedAssignment.pathTitles.join(' + ')}`
-                              : 'Training Ops review'}
-                          </td>
-                          <td data-label="Status">
-                            <span className="reporting-chip" data-status={row.status}>{row.status.replace(/_/g, ' ')}</span>
-                          </td>
-                          <td data-label="Review reason">
-                            {row.reviewReasons.length ? row.reviewReasons.join(' ') : row.inviteAction.replace(/_/g, ' ')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-          </section>
+
           <section className="reporting-view__table" aria-labelledby="supervisor-actions-title">
             <div className="reporting-view__section-heading">
               <div>
@@ -1358,193 +902,7 @@ function SupervisorReportingPanel({
               <p>No supervisor actions are queued. Completed learners, LMS exports, and coaching nudges will appear here.</p>
             )}
           </section>
-          <section className="reporting-view__grid reporting-view__grid--wide" aria-label="Phase 2 integration and content development">
-            <article>
-              <h2>Integration readiness</h2>
-              <div className="readiness-list">
-                {integrationReadiness.map((item) => (
-                  <div key={item.id}>
-                    <span className="reporting-chip" data-status={item.status}>{item.status.replace(/_/g, ' ')}</span>
-                    <strong>{item.system}</strong>
-                    <small>{item.owner}</small>
-                    <p>{item.nextStep}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-            <article>
-              <h2>Content request pipeline</h2>
-              <form className="content-request-form" onSubmit={handleContentRequestSubmit}>
-                <label>
-                  Request
-                  <input
-                    value={contentRequestForm.request}
-                    onChange={(event) => setContentRequestForm((current) => ({ ...current, request: event.target.value }))}
-                    placeholder="Training request"
-                    required
-                  />
-                </label>
-                <div className="content-request-form__row">
-                  <label>
-                    Audience
-                    <input
-                      value={contentRequestForm.audience}
-                      onChange={(event) => setContentRequestForm((current) => ({ ...current, audience: event.target.value }))}
-                      required
-                    />
-                  </label>
-                  <label>
-                    Delivery
-                    <select
-                      value={contentRequestForm.deliveryMode}
-                      onChange={(event) =>
-                        setContentRequestForm((current) => ({
-                          ...current,
-                          deliveryMode: event.target.value as ContentStudioDeliveryMode,
-                        }))
-                      }
-                    >
-                      <option value="hybrid">Hybrid</option>
-                      <option value="in-person">In-person</option>
-                      <option value="virtual">Virtual</option>
-                    </select>
-                  </label>
-                </div>
-                <label>
-                  Source artifacts needed
-                  <input
-                    value={contentRequestForm.artifactsNeeded}
-                    onChange={(event) => setContentRequestForm((current) => ({ ...current, artifactsNeeded: event.target.value }))}
-                    required
-                  />
-                </label>
-                <label>
-                  Outputs
-                  <input
-                    value={contentRequestForm.outputs}
-                    onChange={(event) => setContentRequestForm((current) => ({ ...current, outputs: event.target.value }))}
-                    required
-                  />
-                </label>
-                <div className="content-request-form__row">
-                  <label>
-                    Review owner
-                    <input
-                      value={contentRequestForm.reviewOwner}
-                      onChange={(event) => setContentRequestForm((current) => ({ ...current, reviewOwner: event.target.value }))}
-                      required
-                    />
-                  </label>
-                  <label>
-                    Review note
-                    <input
-                      value={contentRequestForm.reviewNotes}
-                      onChange={(event) => setContentRequestForm((current) => ({ ...current, reviewNotes: event.target.value }))}
-                    />
-                  </label>
-                </div>
-                <button type="submit" disabled={contentRequestSaving}>
-                  {contentRequestSaving ? 'Saving...' : 'Add content request'}
-                </button>
-                {contentRequestError ? <p role="alert">{contentRequestError}</p> : null}
-              </form>
-              <div className="content-request-list">
-                {contentRequests.map((item) => (
-                  <div key={item.id}>
-                    <span className="reporting-chip" data-status={item.status}>{item.status.replace(/-/g, ' ')}</span>
-                    <strong>{item.request}</strong>
-                    <small>{item.audience} · {item.deliveryMode}</small>
-                    <p>{item.outputs.join(' + ')}</p>
-                    <small>Owner: {item.reviewOwner}</small>
-                    {item.reviewNotes ? <p>{item.reviewNotes}</p> : null}
-                    <small>
-                      Packages: {generatedPackages.filter((packageItem) => packageItem.contentRequestId === item.id).length}
-                    </small>
-                    {item.status !== 'published' ? (
-                      <button
-                        className="button-secondary"
-                        type="button"
-                        disabled={packageGeneratingId === item.id || contentRequestSaving}
-                        onClick={() => void generatePackageForRequest(item)}
-                      >
-                        {packageGeneratingId === item.id ? 'Generating package...' : 'Generate AI package'}
-                      </button>
-                    ) : null}
-                    {nextContentRequestStatus(item.status) ? (
-                      <button
-                        className="button-secondary"
-                        type="button"
-                        disabled={contentRequestSaving}
-                        onClick={() => void advanceContentRequest(item)}
-                      >
-                        {nextContentRequestActionLabel(item.status)}
-                      </button>
-                    ) : (
-                      <small>Published and ready for rollout planning.</small>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-          <section className="reporting-view__table" aria-labelledby="generated-package-title">
-            <div className="reporting-view__section-heading">
-              <div>
-                <p className="app-hero__label">Content development</p>
-                <h2 id="generated-package-title">Generated package review board</h2>
-                <p>Durable AI drafts linked to intake requests. Reviewers can gate, approve, and publish before assignment.</p>
-              </div>
-              <span>{generatedPackages.length} drafts</span>
-            </div>
-            {generatedPackages.length ? (
-              <table className="reporting-table reporting-table--packages">
-                <thead>
-                  <tr>
-                    <th>Package</th>
-                    <th>Outputs</th>
-                    <th>Review</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {generatedPackages.slice(0, 8).map((item) => (
-                    <tr key={item.id}>
-                      <td data-label="Package">
-                        <strong>{item.title}</strong>
-                        <small>{item.audience} · {item.deliveryMode} · {item.durationMinutes} min</small>
-                        <small>{item.provider} · {item.model}</small>
-                      </td>
-                      <td data-label="Outputs">
-                        <small>{item.package.template.requiredOutputs.join(' + ')}</small>
-                        <small>{item.sourceArtifactIds.length} source artifacts</small>
-                      </td>
-                      <td data-label="Review">
-                        <span className="reporting-chip" data-status={item.reviewStatus}>{item.reviewStatus.replace(/-/g, ' ')}</span>
-                        <small>{item.reviewOwner}</small>
-                        <small>{item.reviewNotes}</small>
-                      </td>
-                      <td data-label="Actions">
-                        {nextGeneratedPackageStatus(item.reviewStatus) ? (
-                          <button
-                            className="button-secondary"
-                            disabled={packageReviewSavingId === item.id}
-                            onClick={() => void advanceGeneratedPackage(item)}
-                            type="button"
-                          >
-                            {nextGeneratedPackageActionLabel(item.reviewStatus)}
-                          </button>
-                        ) : (
-                          <small>Published to content library release flow.</small>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p>No generated packages are saved yet. Use “Generate AI package” on a content request to create the first reviewable draft.</p>
-            )}
-          </section>
+
           {supervisorGroups.length || facilitatorGroups.length ? (
             <section className="reporting-view__table" aria-labelledby="supervisor-groups-title">
               <div className="reporting-view__section-heading">
@@ -1604,67 +962,6 @@ function SupervisorReportingPanel({
       )}
     </main>
   )
-}
-
-function splitListInput(value: string) {
-  return value
-    .split(/[\n;,]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function nextContentRequestStatus(status: ContentDevelopmentRequest['status']): ContentDevelopmentRequest['status'] | null {
-  if (status === 'intake' || status === 'source-mapped') return 'draft-ready'
-  if (status === 'draft-ready') return 'review-needed'
-  if (status === 'review-needed') return 'approved'
-  if (status === 'approved') return 'published'
-  return null
-}
-
-function nextContentRequestActionLabel(status: ContentDevelopmentRequest['status']) {
-  if (status === 'intake' || status === 'source-mapped') return 'Mark draft ready'
-  if (status === 'draft-ready') return 'Send to review'
-  if (status === 'review-needed') return 'Approve'
-  if (status === 'approved') return 'Publish'
-  return 'Updated'
-}
-
-function contentRequestNextNote(status: ContentDevelopmentRequest['status']) {
-  if (status === 'draft-ready') return 'Draft package is ready for source and facilitation review.'
-  if (status === 'review-needed') return 'Human review requested before pilot delivery.'
-  if (status === 'approved') return 'Approved by training reviewer for pilot use.'
-  if (status === 'published') return 'Published for rollout planning and assignment.'
-  return ''
-}
-
-function nextGeneratedPackageStatus(status: GeneratedTrainingPackage['reviewStatus']): GeneratedTrainingPackage['reviewStatus'] | null {
-  if (status === 'draft') return 'review-needed'
-  if (status === 'review-needed') return 'approved'
-  if (status === 'approved') return 'published'
-  return null
-}
-
-function nextGeneratedPackageActionLabel(status: GeneratedTrainingPackage['reviewStatus']) {
-  if (status === 'draft') return 'Send to review'
-  if (status === 'review-needed') return 'Approve package'
-  if (status === 'approved') return 'Publish package'
-  return 'Updated'
-}
-
-function generatedPackageNextNote(status: GeneratedTrainingPackage['reviewStatus']) {
-  if (status === 'review-needed') {
-    return 'AI draft queued for human review; verify objectives, application, knowledge checks, and resources.'
-  }
-  if (status === 'approved') {
-    return 'Package approved by review owner; ready for publish and assignment planning.'
-  }
-  if (status === 'published') {
-    return 'Published training package; ready to attach to cohorts, makeup paths, and supervisor reporting.'
-  }
-  if (status === 'rejected') {
-    return 'Package rejected; revise prompt, source map, and trainer guidance before review.'
-  }
-  return 'Package status advanced.'
 }
 
 function supervisorNextAction(learner: SupervisorReportPayload['groups']['supervisors'][number]['learners'][number]) {
@@ -1779,7 +1076,99 @@ function MilestonePlan({
 }
 
 
-function DeckStudio() {
+function nextContentRequestStatus(status: ContentDevelopmentRequest['status']): ContentDevelopmentRequest['status'] | null {
+  switch (status) {
+    case 'source-mapped':
+      return 'draft-ready'
+    case 'draft-ready':
+      return 'review-needed'
+    case 'review-needed':
+      return 'approved'
+    case 'approved':
+      return 'published'
+    default:
+      return null
+  }
+}
+
+function nextContentRequestActionLabel(status: ContentDevelopmentRequest['status']): string {
+  switch (status) {
+    case 'source-mapped':
+      return 'Advance to draft ready'
+    case 'draft-ready':
+      return 'Send to review'
+    case 'review-needed':
+      return 'Approve request'
+    case 'approved':
+      return 'Publish request'
+    default:
+      return 'Advance status'
+  }
+}
+
+function contentRequestNextNote(status: ContentDevelopmentRequest['status']): string {
+  return `Advanced to ${status.replace(/-/g, ' ')}.`
+}
+
+function nextGeneratedPackageStatus(status: GeneratedTrainingPackage['reviewStatus']): GeneratedTrainingPackage['reviewStatus'] | null {
+  switch (status) {
+    case 'draft':
+      return 'review-needed'
+    case 'review-needed':
+      return 'approved'
+    case 'approved':
+      return 'published'
+    default:
+      return null
+  }
+}
+
+function nextGeneratedPackageActionLabel(status: GeneratedTrainingPackage['reviewStatus']): string {
+  switch (status) {
+    case 'draft':
+      return 'Send to review'
+    case 'review-needed':
+      return 'Approve package'
+    case 'approved':
+      return 'Publish package'
+    default:
+      return 'Advance draft status'
+  }
+}
+
+function generatedPackageNextNote(status: GeneratedTrainingPackage['reviewStatus']): string {
+  return `Advanced draft to ${status.replace(/-/g, ' ')}.`
+}
+
+function splitListInput(inputString: string): string[] {
+  return inputString
+    .split(/[;,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function CurriculumStudio({
+  supervisorReport,
+  onCreateContentRequest,
+  onUpdateContentRequestStatus,
+  onUpdateGeneratedPackageStatus,
+}: {
+  supervisorReport: SupervisorReportPayload | null
+  onCreateContentRequest: (input: ContentDevelopmentRequestInput) => Promise<void>
+  onUpdateContentRequestStatus: (
+    requestId: string,
+    status: ContentDevelopmentRequest['status'],
+    reviewNotes: string,
+  ) => Promise<void>
+  onUpdateGeneratedPackageStatus: (
+    packageId: string,
+    status: GeneratedTrainingPackage['reviewStatus'],
+    reviewNotes: string,
+  ) => Promise<void>
+}) {
+  const [activeTab, setActiveTab] = useState<'slide' | 'intake' | 'drafts'>('slide')
+
+  // --- Slide Studio States (original DeckStudio) ---
   const [providers, setProviders] = useState<AiProviderStatus[]>([])
   const [templates, setTemplates] = useState<ContentStudioTemplate[]>([])
   const [provider, setProvider] = useState<AiDeckProvider>('openai')
@@ -1795,6 +1184,26 @@ function DeckStudio() {
   const [isDownloadingPptx, setIsDownloadingPptx] = useState(false)
   const [isGeneratingPackage, setIsGeneratingPackage] = useState(false)
   const [deckError, setDeckError] = useState('')
+
+  // --- Intake Pipeline & AI Drafts States ---
+  const [contentRequestForm, setContentRequestForm] = useState({
+    request: 'Behavior management for high-energy transitions',
+    audience: 'Program staff and site leaders',
+    deliveryMode: 'hybrid' as ContentStudioDeliveryMode,
+    artifactsNeeded: 'PBIS PPT Master; PBIS part 3 template; Knowledge check sample',
+    outputs: 'Facilitator deck; Knowledge check; Practice scenarios; Learner handout',
+    reviewOwner: 'Program Training & Development',
+    reviewNotes: 'Needs source map and human review before pilot.',
+  })
+  const [contentRequestSaving, setContentRequestSaving] = useState(false)
+  const [contentRequestError, setContentRequestError] = useState('')
+  const [packageGeneratingId, setPackageGeneratingId] = useState('')
+  const [packageReviewSavingId, setPackageReviewSavingId] = useState('')
+  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null)
+
+  const contentRequests = supervisorReport?.contentDevelopmentRequests ?? []
+  const generatedPackages = supervisorReport?.generatedTrainingPackages ?? []
+  const selectedPackage = generatedPackages.find((pkg) => pkg.id === selectedPackageId) || generatedPackages[0]
 
   const deckProviders = useMemo(
     () => providers.filter((item): item is AiProviderStatus & { id: AiDeckProvider } =>
@@ -1818,7 +1227,6 @@ function DeckStudio() {
     ?? deckProviders.find((item) => item.id === 'gemini' && item.configured)
     ?? deckProviders[0]
   const effectiveProvider = deckProviders.some((item) => item.id === provider) ? provider : fallbackProvider?.id ?? provider
-  const selectedProvider = deckProviders.find((item) => item.id === effectiveProvider)
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId)
 
   const applyTemplate = (template: ContentStudioTemplate) => {
@@ -1877,258 +1285,686 @@ function DeckStudio() {
     }
   }
 
+  // --- Intake Pipeline Handlers ---
+  const handleContentRequestSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setContentRequestSaving(true)
+    setContentRequestError('')
+    try {
+      await onCreateContentRequest({
+        request: contentRequestForm.request,
+        audience: contentRequestForm.audience,
+        deliveryMode: contentRequestForm.deliveryMode,
+        artifactsNeeded: splitListInput(contentRequestForm.artifactsNeeded),
+        outputs: splitListInput(contentRequestForm.outputs),
+        reviewOwner: contentRequestForm.reviewOwner,
+        reviewNotes: contentRequestForm.reviewNotes,
+      })
+      setContentRequestForm((current) => ({
+        ...current,
+        request: '',
+        reviewNotes: '',
+      }))
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to add content request')
+    } finally {
+      setContentRequestSaving(false)
+    }
+  }
+
+  const advanceContentRequest = async (item: ContentDevelopmentRequest) => {
+    const nextStatus = nextContentRequestStatus(item.status)
+    if (!nextStatus) return
+    const note = contentRequestNextNote(nextStatus)
+    setContentRequestSaving(true)
+    setContentRequestError('')
+    try {
+      await onUpdateContentRequestStatus(item.id, nextStatus, note)
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to update content request')
+    } finally {
+      setContentRequestSaving(false)
+    }
+  }
+
+  const generatePackageForRequest = async (item: ContentDevelopmentRequest) => {
+    setPackageGeneratingId(item.id)
+    setContentRequestError('')
+    try {
+      const templateId = item.deliveryMode === 'virtual'
+        ? 'virtual-makeup-path'
+        : item.request.toLowerCase().includes('template')
+          ? 'trainer-template-system'
+          : 'core-in-person-training'
+      await createContentStudioPackage({
+        provider: 'openai',
+        contentRequestId: item.id,
+        templateId,
+        topic: item.request,
+        audience: item.audience,
+        durationMinutes: item.deliveryMode === 'virtual' ? 35 : 45,
+        deliveryMode: item.deliveryMode,
+        sourceArtifactIds: item.artifactsNeeded,
+      })
+      await onUpdateContentRequestStatus(item.id, 'draft-ready', `AI training package generated for review from request ${item.id}.`)
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to generate training package')
+    } finally {
+      setPackageGeneratingId('')
+    }
+  }
+
+  // --- AI Drafts Handlers ---
+  const advanceGeneratedPackage = async (item: GeneratedTrainingPackage) => {
+    const nextStatus = nextGeneratedPackageStatus(item.reviewStatus)
+    if (!nextStatus) return
+    setPackageReviewSavingId(item.id)
+    setContentRequestError('')
+    try {
+      await onUpdateGeneratedPackageStatus(item.id, nextStatus, generatedPackageNextNote(nextStatus))
+    } catch (error) {
+      setContentRequestError(error instanceof Error ? error.message : 'Unable to update generated package')
+    } finally {
+      setPackageReviewSavingId('')
+    }
+  }
+
   return (
     <main className="deck-page" aria-labelledby="deck-studio-title">
       <section className="deck-studio">
         <div className="deck-studio__hero">
-          <p className="app-hero__label">Content development studio</p>
-          <h1 id="deck-studio-title">Training Deck Studio</h1>
+          <p className="app-hero__label">Consolidated Curriculum workspace</p>
+          <h1 id="deck-studio-title">Curriculum Studio</h1>
           <p>
-            Turn a weekly training request into a source-grounded package: editable PowerPoint, knowledge check, practice
-            scenario, handout, and review notes. This is the main workflow for reducing trainer content-development time.
+            Unified suite to manually draft slides, request content deliveries through the intake pipeline, and review generated AI drafts with the detail inspector.
           </p>
         </div>
 
-            <div className="deck-studio__workspace">
-          <div className="deck-studio__controls">
-            <div className="provider-strip" aria-label="AI provider status">
-              {deckProviders.map((item) => (
-                <span data-configured={item.configured} key={item.id} title={item.note}>
-                  {item.label}: {item.configured ? 'ready' : 'needs key'}
-                </span>
-              ))}
-            </div>
+        <nav className="curriculum-tabs" aria-label="Curriculum Studio Sections" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '2px solid var(--tt-line)', paddingBottom: '0.25rem' }}>
+          <button
+            className="curriculum-tabs__button"
+            data-active={activeTab === 'slide'}
+            onClick={() => setActiveTab('slide')}
+            type="button"
+          >
+            Slide Studio
+          </button>
+          <button
+            className="curriculum-tabs__button"
+            data-active={activeTab === 'intake'}
+            onClick={() => setActiveTab('intake')}
+            type="button"
+          >
+            Intake Pipeline
+          </button>
+          <button
+            className="curriculum-tabs__button"
+            data-active={activeTab === 'drafts'}
+            onClick={() => setActiveTab('drafts')}
+            type="button"
+          >
+            AI Drafts
+          </button>
+        </nav>
 
-            <form className="deck-form" onSubmit={handleGenerateDeck}>
-              <label>
-                Provider
-                <select value={effectiveProvider} onChange={(event) => setProvider(event.target.value as AiDeckProvider)}>
-                  <option value="openai">OpenAI Premium</option>
-                  <option value="gemini">Gemini Flash</option>
-                  <option value="claude">Claude Sonnet</option>
-                </select>
-              </label>
-              <label>
-                Template
-                <select
-                  value={selectedTemplateId}
-                  onChange={(event) => {
-                    const template = templates.find((item) => item.id === event.target.value)
-                    if (template) applyTemplate(template)
-                    else setSelectedTemplateId(event.target.value)
-                  }}
-                >
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>{template.name}</option>
+        {activeTab === 'slide' && (
+          <>
+            <div className="deck-studio__workspace">
+              <div className="deck-studio__controls">
+                <h2>Provider details</h2>
+                <div className="provider-strip" aria-label="AI Providers">
+                  {deckProviders.map((item) => (
+                    <span key={item.id} data-configured={item.configured}>
+                      {item.label} {item.configured ? '✓' : '(not configured)'}
+                    </span>
                   ))}
-                </select>
-              </label>
-              <label>
-                Topic
-                <input value={topic} onChange={(event) => setTopic(event.target.value)} />
-              </label>
-              <label>
-                Audience
-                <input value={audience} onChange={(event) => setAudience(event.target.value)} />
-              </label>
+                </div>
+                <form className="deck-form" onSubmit={handleGenerateDeck}>
+                  <label>
+                    AI Model Provider
+                    <select
+                      value={effectiveProvider}
+                      onChange={(event) => setProvider(event.target.value as AiDeckProvider)}
+                    >
+                      {deckProviders.map((item) => (
+                        <option key={item.id} value={item.id} disabled={!item.configured}>
+                          {item.label} {item.configured ? '' : '(not configured)'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Template
+                    <select
+                      value={selectedTemplateId}
+                      onChange={(event) => setSelectedTemplateId(event.target.value)}
+                    >
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name} ({template.deliveryMode})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Topic Starter
+                    <input value={topic} onChange={(event) => setTopic(event.target.value)} required />
+                  </label>
+                  <label>
+                    Target Audience
+                    <input value={audience} onChange={(event) => setAudience(event.target.value)} required />
+                  </label>
                   <div className="deck-form__row">
                     <label>
-                      Minutes
-                  <input min={10} max={180} type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
-                </label>
-                <label>
-                  Slides
-                      <input min={4} max={14} type="number" value={slideCount} onChange={(event) => setSlideCount(Number(event.target.value))} />
+                      Duration (minutes)
+                      <input
+                        type="number"
+                        value={durationMinutes}
+                        onChange={(event) => setDurationMinutes(Number(event.target.value))}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Slide count
+                      <input
+                        type="number"
+                        value={slideCount}
+                        onChange={(event) => setSlideCount(Number(event.target.value))}
+                        required
+                      />
                     </label>
                   </div>
                   <label>
-                    Delivery mode
-                    <select value={deliveryMode} onChange={(event) => setDeliveryMode(event.target.value as ContentStudioDeliveryMode)}>
+                    Delivery Mode
+                    <select
+                      value={deliveryMode}
+                      onChange={(event) => setDeliveryMode(event.target.value as ContentStudioDeliveryMode)}
+                    >
                       <option value="in-person">In-person</option>
                       <option value="virtual">Virtual</option>
                       <option value="hybrid">Hybrid</option>
                     </select>
                   </label>
-              <div className="deck-form__actions">
-                <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
-                  {isGenerating ? (
-                    <>
-                      <span className="tt-spinner" aria-hidden="true" />
-                      Generating preview...
-                    </>
-                  ) : (
-                    'Generate preview'
-                  )}
-                </button>
-                <button
-                  disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
-                  onClick={handleDownloadPptx}
-                  type="button"
-                >
-                  {isDownloadingPptx ? (
-                    <>
-                      <span className="tt-spinner" aria-hidden="true" />
-                      Building PowerPoint...
-                    </>
-                  ) : (
-                    'Download PowerPoint'
-                  )}
-                </button>
-                <button
-                  className="button-secondary"
-                  disabled={isGeneratingPackage || topic.length < 8}
-                  onClick={handleGenerateContentPackage}
-                  type="button"
-                >
-                  {isGeneratingPackage ? (
-                    <>
-                      <span className="tt-spinner" aria-hidden="true" />
-                      Building content package...
-                    </>
-                  ) : (
-                    'Generate full package'
-                  )}
-                </button>
+                  <div className="deck-form__actions">
+                    <button type="submit" disabled={isGenerating}>
+                      {isGenerating ? 'Generating outline...' : 'Generate preview'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={isDownloadingPptx}
+                      onClick={() => void handleDownloadPptx()}
+                    >
+                      {isDownloadingPptx ? 'Exporting...' : 'Download PowerPoint'}
+                    </button>
+                    {outline ? (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={isGeneratingPackage}
+                        onClick={() => void handleGenerateContentPackage()}
+                      >
+                        {isGeneratingPackage ? 'Creating package...' : 'Generate full package'}
+                      </button>
+                    ) : null}
+                  </div>
+                  {deckError ? <p role="alert" className="deck-form__hint" style={{ color: 'var(--tt-orange)', fontWeight: 800 }}>{deckError}</p> : null}
+                </form>
               </div>
-              {deckError ? <p role="alert">{deckError}</p> : null}
-            </form>
-          </div>
 
-          <aside className="deck-studio__quality" aria-label="Deck quality system">
-            <p className="app-hero__label">Output standard</p>
-            <h2>Facilitator-ready, editable PowerPoint</h2>
-            <div className="deck-studio__workflow" aria-label="Content creation workflow">
-              <span><strong>1</strong> Request</span>
-              <span><strong>2</strong> Source-map</span>
-              <span><strong>3</strong> Draft</span>
-              <span><strong>4</strong> Review</span>
+              <div className="deck-studio__quality">
+                <h2>Standard Quality Checklist</h2>
+                <div className="deck-studio__proof">
+                  <span>Facilitator-ready, editable PowerPoint</span>
+                  <span>Objectives mapped to certified SOP references</span>
+                  <span>10:2 interactive learner practice routine</span>
+                  <span>Three knowledge checks with clear rationales</span>
+                </div>
+                <div className="deck-studio__workflow" aria-label="Deck outline workflow steps">
+                  <span><strong>1</strong> Request</span>
+                  <span><strong>2</strong> Source-map</span>
+                  <span><strong>3</strong> Draft</span>
+                  <span><strong>4</strong> Review</span>
+                </div>
+                {selectedTemplate ? (
+                  <div className="template-detail" aria-labelledby="template-detail-title" style={{ marginTop: '1rem' }}>
+                    <strong id="template-detail-title">{selectedTemplate.name}</strong>
+                    <span>{selectedTemplate.description}</span>
+                    <span>Best for: {selectedTemplate.bestFor}</span>
+                    <ol>
+                      <li>
+                        <b>Audience:</b>
+                        <span>{selectedTemplate.audience}</span>
+                      </li>
+                      <li>
+                        <b>Duration:</b>
+                        <span>{selectedTemplate.durationMinutes} min</span>
+                      </li>
+                      <li>
+                        <b>Outputs:</b>
+                        <span>{selectedTemplate.requiredOutputs.join(', ')}</span>
+                      </li>
+                    </ol>
+                  </div>
+                ) : null}
+                <div className="content-starters">
+                  <h2>Quick templates starters</h2>
+                  <div className="content-starters__grid">
+                    {templates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        aria-pressed={selectedTemplateId === template.id}
+                        onClick={() => applyTemplate(template)}
+                      >
+                        <strong>{template.name}</strong>
+                        <span>{template.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="deck-studio__proof">
-              <span>Source-linked evidence strip</span>
-              <span>PBIS/SOP artifact grounding</span>
-              <span>Editable infographic shapes</span>
-              <span>Human review gate</span>
-            </div>
-            {selectedTemplate ? (
-              <div className="template-detail">
-                <strong>{selectedTemplate.name}</strong>
-                <span>{selectedTemplate.bestFor}</span>
-                <ol>
-                  {selectedTemplate.structure.slice(0, 4).map((step) => (
-                    <li key={step.label}>
-                      <b>{step.label}</b>
-                      {step.purpose}
+
+            {outline ? (
+              <section className="deck-outline" aria-labelledby="deck-outline-title" style={{ marginTop: '1.5rem' }}>
+                <div>
+                  <p className="app-hero__label">AI draft preview</p>
+                  <h2 id="deck-outline-title">{outline.title}</h2>
+                  <p>Review the generated structure, objectives, and talking points before exporting to PPTX.</p>
+                </div>
+                <div className="deck-outline__rail">
+                  <span>{outline.provider} provider</span>
+                  <span>{outline.slides.length} slides</span>
+                  <span>{outline.durationMinutes} minutes</span>
+                </div>
+                <ol className="deck-outline__cards">
+                  {outline.slides.map((slide, index) => (
+                    <li key={index}>
+                      <small>Slide {index + 1}</small>
+                      <strong>{slide.title}</strong>
+                      <em>Objective: {slide.objective}</em>
+                      <em>Activity: {slide.activityPrompt}</em>
+                      <em>Talking points: {slide.talkingPoints.join(' · ')}</em>
+                      <em>Trainer note: {slide.facilitatorNotes}</em>
+                      <div className="source-list">
+                        {slide.sourceRefs.map((ref) => (
+                          <span key={`${ref.artifact}-${ref.locator}`}>
+                            {ref.artifact} · {ref.locator}
+                          </span>
+                        ))}
+                      </div>
                     </li>
                   ))}
                 </ol>
-              </div>
+              </section>
             ) : null}
 
-            <section className="content-starters" aria-label="Phase 2 content request starters">
-              <div>
-                <p className="app-hero__label">Reusable templates</p>
-                <h2>Standardize course development</h2>
-                <p>Pick a template to align every new request to objectives, application, checks, resources, and review gates.</p>
-              </div>
-              <div className="content-starters__grid">
-                {templates.map((template) => (
-                  <button
-                    aria-pressed={template.id === selectedTemplateId}
-                    key={template.id}
-                    onClick={() => applyTemplate(template)}
-                    type="button"
-                  >
-                    <strong>{template.name}</strong>
-                    <span>{template.requiredOutputs.join(' + ')}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          </aside>
-        </div>
-
-        {outline ? (
-          <section className="deck-outline" aria-labelledby="deck-outline-title">
-            <div>
-              <p className="app-hero__label">{outline.provider} · {outline.model}</p>
-              <h3 id="deck-outline-title">{outline.title}</h3>
-              <p>{outline.durationMinutes} minutes for {outline.audience}</p>
-            </div>
-            <div className="deck-outline__rail" aria-label="Generated deck summary">
-              <span>{outline.slides.length} editable slides</span>
-              <span>{outline.sourceArtifacts.length} source artifacts</span>
-              <span>Human review required</span>
-            </div>
-            <ol className="deck-outline__cards">
-              {outline.slides.map((slide, index) => (
-                <li data-layout={slide.layout} key={`${slide.title}-${index}`}>
-                  <small>{slide.layout}</small>
-                  <strong>{index + 1}. {slide.title}</strong>
-                  <span>{slide.objective}</span>
-                  <em>{slide.activityPrompt}</em>
-                </li>
-              ))}
-            </ol>
-            <div className="source-list">
-              {outline.sourceArtifacts.map((artifact) => <span key={artifact}>{artifact}</span>)}
-            </div>
-          </section>
-        ) : null}
-        {contentPackage ? (
-          <section className="content-package" aria-labelledby="content-package-title">
-            <div>
-              <p className="app-hero__label">{contentPackage.provider} · {contentPackage.model}</p>
-              <h2 id="content-package-title">{contentPackage.title}</h2>
-              <p>
-                Full training package for {contentPackage.audience}: deck sections, knowledge checks, practice lab,
-                facilitator notes, learner handout, and in-person/virtual delivery guidance.
-              </p>
-            </div>
-            <div className="content-package__grid">
-              <article>
-                <h3>Template QA</h3>
-                <strong>{contentPackage.template.name}</strong>
-                <ul>
-                  {contentPackage.template.reviewChecklist.map((item) => <li key={item}>{item}</li>)}
-                </ul>
-              </article>
-              <article>
-                <h3>Objectives</h3>
-                <ul>
-                  {contentPackage.learningObjectives.map((objective) => <li key={objective}>{objective}</li>)}
-                </ul>
-              </article>
-              <article>
-                <h3>Knowledge checks</h3>
-                <ol>
-                  {contentPackage.knowledgeCheckQuestions.map((question) => (
-                    <li key={question.question}>{question.question}</li>
+            {contentPackage ? (
+              <section className="content-package" aria-labelledby="content-package-title" style={{ marginTop: '1.5rem' }}>
+                <div>
+                  <p className="app-hero__label">{contentPackage.provider} · {contentPackage.model}</p>
+                  <h2 id="content-package-title">{contentPackage.title}</h2>
+                  <p>
+                    Full training package for {contentPackage.audience}: deck sections, knowledge checks, practice lab,
+                    facilitator notes, learner handout, and in-person/virtual delivery guidance.
+                  </p>
+                </div>
+                <div className="content-package__grid">
+                  <article>
+                    <h3>Template QA</h3>
+                    <strong>{contentPackage.template.name}</strong>
+                    <ul>
+                      {contentPackage.template.reviewChecklist.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </article>
+                  <article>
+                    <h3>Objectives</h3>
+                    <ul>
+                      {contentPackage.learningObjectives.map((objective) => <li key={objective}>{objective}</li>)}
+                    </ul>
+                  </article>
+                  <article>
+                    <h3>Knowledge checks</h3>
+                    <ol>
+                      {contentPackage.knowledgeCheckQuestions.map((question) => (
+                        <li key={question.question}>{question.question}</li>
+                      ))}
+                    </ol>
+                  </article>
+                  <article>
+                    <h3>Practice lab</h3>
+                    <strong>{contentPackage.practiceActivity.title}</strong>
+                    <p>{contentPackage.practiceActivity.facilitatorPrompt}</p>
+                  </article>
+                  <article>
+                    <h3>Learner handout</h3>
+                    <p>{contentPackage.learnerHandout.summary}</p>
+                  </article>
+                </div>
+                <ol className="content-package__sections">
+                  {contentPackage.deckOutline.map((section) => (
+                    <li key={section.sectionTitle}>
+                      <strong>{section.sectionTitle}</strong>
+                      <span>{section.objective}</span>
+                      <em>{section.activityPrompt}</em>
+                    </li>
                   ))}
                 </ol>
-              </article>
-              <article>
-                <h3>Practice lab</h3>
-                <strong>{contentPackage.practiceActivity.title}</strong>
-                <p>{contentPackage.practiceActivity.facilitatorPrompt}</p>
-              </article>
-              <article>
-                <h3>Learner handout</h3>
-                <p>{contentPackage.learnerHandout.summary}</p>
-              </article>
+              </section>
+            ) : null}
+          </>
+        )}
+
+        {activeTab === 'intake' && (
+          <div className="deck-studio__workspace">
+            <div className="deck-studio__controls">
+              <h2 id="content-request-pipeline-title">Content request pipeline</h2>
+              <p>Form to request new training courses. Standardized intake creates trackable, source-grounded packages.</p>
+              <form className="content-request-form" onSubmit={handleContentRequestSubmit}>
+                <label>
+                  Request Description
+                  <input
+                    value={contentRequestForm.request}
+                    onChange={(event) => setContentRequestForm((current) => ({ ...current, request: event.target.value }))}
+                    placeholder="E.g. PBIS support for high-energy playground sessions"
+                    required
+                  />
+                </label>
+                <div className="content-request-form__row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <label>
+                    Target Audience
+                    <input
+                      value={contentRequestForm.audience}
+                      onChange={(event) => setContentRequestForm((current) => ({ ...current, audience: event.target.value }))}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Delivery Mode
+                    <select
+                      value={contentRequestForm.deliveryMode}
+                      onChange={(event) =>
+                        setContentRequestForm((current) => ({
+                          ...current,
+                          deliveryMode: event.target.value as ContentStudioDeliveryMode,
+                        }))
+                      }
+                    >
+                      <option value="hybrid">Hybrid</option>
+                      <option value="in-person">In-person</option>
+                      <option value="virtual">Virtual</option>
+                    </select>
+                  </label>
+                </div>
+                <label style={{ display: 'block', marginTop: '0.5rem' }}>
+                  Source Artifacts Needed (semicolon separated)
+                  <input
+                    value={contentRequestForm.artifactsNeeded}
+                    onChange={(event) => setContentRequestForm((current) => ({ ...current, artifactsNeeded: event.target.value }))}
+                    required
+                  />
+                </label>
+                <label style={{ display: 'block', marginTop: '0.5rem' }}>
+                  Outputs Mapped (semicolon separated)
+                  <input
+                    value={contentRequestForm.outputs}
+                    onChange={(event) => setContentRequestForm((current) => ({ ...current, outputs: event.target.value }))}
+                    required
+                  />
+                </label>
+                <div className="content-request-form__row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.5rem', marginBottom: '0.7rem' }}>
+                  <label>
+                    Review Owner
+                    <input
+                      value={contentRequestForm.reviewOwner}
+                      onChange={(event) => setContentRequestForm((current) => ({ ...current, reviewOwner: event.target.value }))}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Review Note
+                    <input
+                      value={contentRequestForm.reviewNotes}
+                      onChange={(event) => setContentRequestForm((current) => ({ ...current, reviewNotes: event.target.value }))}
+                    />
+                  </label>
+                </div>
+                <button type="submit" disabled={contentRequestSaving} style={{ width: '100%' }}>
+                  {contentRequestSaving ? 'Saving...' : 'Add content request'}
+                </button>
+                {contentRequestError ? <p role="alert" style={{ color: 'var(--tt-orange)', marginTop: '0.5rem', fontWeight: 'bold' }}>{contentRequestError}</p> : null}
+              </form>
             </div>
-            <ol className="content-package__sections">
-              {contentPackage.deckOutline.map((section) => (
-                <li key={section.sectionTitle}>
-                  <strong>{section.sectionTitle}</strong>
-                  <span>{section.objective}</span>
-                  <em>{section.activityPrompt}</em>
-                </li>
-              ))}
-            </ol>
-          </section>
-        ) : null}
+
+            <div className="deck-studio__quality" style={{ display: 'grid', gap: '1rem' }}>
+              <h2>Requested Deliveries</h2>
+              <div className="content-request-list" style={{ display: 'grid', gap: '1rem' }}>
+                {contentRequests.length ? (
+                  contentRequests.map((item) => (
+                    <div key={item.id} style={{ padding: '1rem', border: '1px solid var(--tt-line)', borderRadius: 'var(--tt-radius-sm)', background: 'var(--tt-white)', display: 'grid', gap: '0.45rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="reporting-chip" data-status={item.status}>{item.status.replace(/-/g, ' ')}</span>
+                        <small style={{ color: 'var(--tt-muted)' }}>{item.reviewOwner}</small>
+                      </div>
+                      <strong style={{ fontSize: '1.05rem', color: 'var(--tt-dark)' }}>{item.request}</strong>
+                      <small style={{ color: 'var(--tt-muted)', fontWeight: 700 }}>
+                        {item.audience} · {item.deliveryMode}
+                      </small>
+                      <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--tt-muted)' }}>
+                        <b>Outputs:</b> {item.outputs.join(' + ')}
+                      </p>
+                      {item.reviewNotes ? (
+                        <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--tt-muted)', background: '#fff9ef', padding: '0.35rem', borderLeft: '2px solid var(--tt-orange)' }}>
+                          {item.reviewNotes}
+                        </p>
+                      ) : null}
+                      <small style={{ color: 'var(--tt-teal-dark)', fontWeight: 'bold' }}>
+                        Linked packages: {generatedPackages.filter((packageItem) => packageItem.contentRequestId === item.id).length}
+                      </small>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                        {item.status !== 'published' ? (
+                          <button
+                            className="button-secondary"
+                            type="button"
+                            disabled={packageGeneratingId === item.id || contentRequestSaving}
+                            onClick={() => void generatePackageForRequest(item)}
+                            style={{ flex: 1, minHeight: '2rem', fontSize: '0.85rem' }}
+                          >
+                            {packageGeneratingId === item.id ? 'Generating package...' : 'Generate AI package'}
+                          </button>
+                        ) : null}
+                        {nextContentRequestStatus(item.status) ? (
+                          <button
+                            className="button-secondary"
+                            type="button"
+                            disabled={contentRequestSaving}
+                            onClick={() => void advanceContentRequest(item)}
+                            style={{ flex: 1, minHeight: '2rem', fontSize: '0.85rem' }}
+                          >
+                            {nextContentRequestActionLabel(item.status)}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.82rem', color: 'var(--tt-teal-dark)', fontWeight: 'bold', alignSelf: 'center' }}>Published to Release flow.</span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p>No content requests pending. Use the form to submit new requests.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'drafts' && (
+          <div className="deck-studio__workspace">
+            <div className="deck-studio__controls">
+              <h2 id="generated-package-title">Generated drafts</h2>
+              <p>Durable AI packages linked to intake requests. Review and inspector detail before gate approvals.</p>
+              {generatedPackages.length ? (
+                <div className="content-request-list" style={{ display: 'grid', gap: '0.65rem' }}>
+                  {generatedPackages.map((pkg) => (
+                    <button
+                      key={pkg.id}
+                      className={`content-request-item`}
+                      onClick={() => setSelectedPackageId(pkg.id)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        display: 'block',
+                        padding: '0.9rem',
+                        borderRadius: 'var(--tt-radius-sm)',
+                        border: selectedPackageId === pkg.id || (!selectedPackageId && selectedPackage?.id === pkg.id)
+                          ? '2px solid var(--tt-teal)'
+                          : '1px solid var(--tt-line)',
+                        background: selectedPackageId === pkg.id || (!selectedPackageId && selectedPackage?.id === pkg.id)
+                          ? 'var(--tt-soft-teal)'
+                          : 'var(--tt-white)',
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      }}
+                      type="button"
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ display: 'block', color: 'var(--tt-dark)', fontSize: '0.95rem' }}>{pkg.title}</strong>
+                        <span className="reporting-chip" data-status={pkg.reviewStatus}>{pkg.reviewStatus.replace(/-/g, ' ')}</span>
+                      </div>
+                      <small style={{ color: 'var(--tt-muted)', display: 'block', marginTop: '0.25rem', fontWeight: 700 }}>
+                        {pkg.audience} · {pkg.deliveryMode} · {pkg.durationMinutes} min
+                      </small>
+                      <small style={{ color: 'var(--tt-muted)', display: 'block', fontSize: '0.8rem' }}>
+                        {pkg.provider} · {pkg.model}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p>No generated drafts available. Submit an intake request to start the AI generation pipeline.</p>
+              )}
+            </div>
+
+            <aside className="deck-studio__quality" style={{ display: 'grid', gap: '1rem', minHeight: '30rem' }}>
+              {selectedPackage ? (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', borderBottom: '1px solid var(--tt-line)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div>
+                      <p className="app-hero__label" style={{ margin: 0 }}>{selectedPackage.provider} · {selectedPackage.model}</p>
+                      <h2 style={{ fontSize: '1.25rem', margin: '0.15rem 0 0' }}>{selectedPackage.title}</h2>
+                    </div>
+                    <span className="reporting-chip" data-status={selectedPackage.reviewStatus}>{selectedPackage.reviewStatus.replace(/-/g, ' ')}</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: '1.25rem' }}>
+                    {/* Status Advance Controls */}
+                    <div style={{ padding: '0.85rem', background: 'var(--tt-white)', borderRadius: 'var(--tt-radius-sm)', border: '1px solid rgba(72, 192, 176, 0.25)' }}>
+                      <h3 style={{ fontSize: '0.9rem', margin: '0 0 0.5rem', textTransform: 'uppercase', color: 'var(--tt-teal-dark)' }}>Advance Review Gate</h3>
+                      <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: 'var(--tt-muted)' }}>
+                        <strong>Owner:</strong> {selectedPackage.reviewOwner} <br />
+                        <strong>Notes:</strong> {selectedPackage.reviewNotes || 'None'}
+                      </p>
+                      {nextGeneratedPackageStatus(selectedPackage.reviewStatus) ? (
+                        <button
+                          className="button-secondary"
+                          disabled={packageReviewSavingId === selectedPackage.id}
+                          onClick={() => void advanceGeneratedPackage(selectedPackage)}
+                          style={{ width: '100%', minHeight: '2.25rem' }}
+                          type="button"
+                        >
+                          {packageReviewSavingId === selectedPackage.id ? 'Saving...' : nextGeneratedPackageActionLabel(selectedPackage.reviewStatus)}
+                        </button>
+                      ) : (
+                        <div style={{ padding: '0.45rem', background: 'var(--tt-soft-teal)', color: 'var(--tt-teal-dark)', borderRadius: 'var(--tt-radius-sm)', fontWeight: 'bold', fontSize: '0.85rem', textAlign: 'center' }}>
+                          Published to content library release flow.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Objectives */}
+                    <div>
+                      <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.25rem', color: 'var(--tt-dark)' }}>Measurable Objectives</h3>
+                      {selectedPackage.package.learningObjectives && selectedPackage.package.learningObjectives.length ? (
+                        <ul style={{ margin: 0, paddingLeft: '1.15rem', fontSize: '0.9rem', color: 'var(--tt-muted)' }}>
+                          {selectedPackage.package.learningObjectives.map((obj) => <li key={obj}>{obj}</li>)}
+                        </ul>
+                      ) : (
+                        <p style={{ fontStyle: 'italic', margin: 0, fontSize: '0.9rem' }}>No objectives generated.</p>
+                      )}
+                    </div>
+
+                    {/* Created modules/outline */}
+                    <div>
+                      <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.5rem', color: 'var(--tt-dark)' }}>Outline & Created Modules</h3>
+                      <ol style={{ margin: 0, padding: 0, display: 'grid', gap: '0.55rem' }}>
+                        {selectedPackage.package.deckOutline && selectedPackage.package.deckOutline.length ? (
+                          selectedPackage.package.deckOutline.map((sec, idx) => (
+                            <li key={idx} style={{ listStyle: 'none', background: 'var(--tt-white)', padding: '0.75rem', borderRadius: 'var(--tt-radius-sm)', border: '1px solid var(--tt-line)' }}>
+                              <strong style={{ display: 'block', fontSize: '0.9rem', color: 'var(--tt-dark)' }}>{idx + 1}. {sec.sectionTitle}</strong>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--tt-muted)', display: 'block', marginTop: '0.2rem' }}>
+                                <b>Objective:</b> {sec.objective}
+                              </span>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--tt-muted)', display: 'block', marginTop: '0.2rem' }}>
+                                <b>Activity Prompt:</b> <i>{sec.activityPrompt}</i>
+                              </span>
+                              {sec.facilitatorNotes && (
+                                <span style={{ fontSize: '0.82rem', color: 'var(--tt-muted)', display: 'block', background: '#fffcf7', borderLeft: '2px solid var(--tt-orange)', paddingLeft: '0.4rem', marginTop: '0.25rem', paddingTop: '0.15rem', paddingBottom: '0.15rem' }}>
+                                  <b>Trainer Guide Notes:</b> {sec.facilitatorNotes}
+                                </span>
+                              )}
+                            </li>
+                          ))
+                        ) : (
+                          <p style={{ fontStyle: 'italic', margin: 0, fontSize: '0.9rem' }}>No outline modules generated.</p>
+                        )}
+                      </ol>
+                    </div>
+
+                    {/* Guide Notes */}
+                    <div>
+                      <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.25rem', color: 'var(--tt-dark)' }}>Facilitator Guide Notes</h3>
+                      {selectedPackage.package.facilitatorGuideNotes && selectedPackage.package.facilitatorGuideNotes.length ? (
+                        <ul style={{ margin: 0, paddingLeft: '1.15rem', fontSize: '0.9rem', color: 'var(--tt-muted)' }}>
+                          {selectedPackage.package.facilitatorGuideNotes.map((note, idx) => <li key={idx}>{note}</li>)}
+                        </ul>
+                      ) : (
+                        <p style={{ fontStyle: 'italic', margin: 0, fontSize: '0.9rem' }}>No additional guide notes generated.</p>
+                      )}
+                    </div>
+
+                    {/* Resource Links */}
+                    <div>
+                      <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.25rem', color: 'var(--tt-dark)' }}>Resource Links & Takeaways</h3>
+                      <p style={{ margin: '0 0 0.5rem', fontSize: '0.88rem', color: 'var(--tt-muted)' }}>
+                        {selectedPackage.package.learnerHandout?.summary || 'No summary generated.'}
+                      </p>
+                      {selectedPackage.package.learnerHandout?.resourceList && selectedPackage.package.learnerHandout.resourceList.length ? (
+                        <div style={{ display: 'grid', gap: '0.35rem', marginTop: '0.5rem' }}>
+                          {selectedPackage.package.learnerHandout.resourceList.map((res, idx) => (
+                            <div key={idx} style={{ padding: '0.5rem 0.65rem', background: 'var(--tt-white)', borderRadius: 'var(--tt-radius-sm)', border: '1px solid var(--tt-line)', display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <FileText size={14} color="var(--tt-teal-dark)" />
+                              <span style={{ fontSize: '0.85rem', fontWeight: 650, color: 'var(--tt-teal-dark)' }}>
+                                {res.title || res.artifact} · <small style={{ color: 'var(--tt-muted)' }}>{res.locator}</small>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontStyle: 'italic', margin: 0, fontSize: '0.85rem', color: 'var(--tt-muted)' }}>No resource links mapped.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p>No package selected. Click a draft package on the left to inspect its details.</p>
+              )}
+            </aside>
+          </div>
+        )}
       </section>
     </main>
+
+
   )
 }
 

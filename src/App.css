@@ -2887,3 +2887,33 @@ select option {
     animation: tt-spin 0.75s linear infinite;
   }
 }
+
+/* Curriculum Studio Sub-tabs */
+.curriculum-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--tt-line);
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.25rem;
+}
+
+.curriculum-tabs__button {
+  border: 0;
+  background: transparent;
+  color: var(--tt-muted);
+  cursor: pointer;
+  font-weight: 850;
+  padding: 0.65rem 1.25rem;
+  font-size: 1rem;
+  border-bottom: 3px solid transparent;
+  transition: all 150ms ease;
+}
+
+.curriculum-tabs__button:hover {
+  color: var(--tt-dark);
+}
+
+.curriculum-tabs__button[data-active='true'] {
+  color: var(--tt-orange);
+  border-bottom-color: var(--tt-orange);
+}
