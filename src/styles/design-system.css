@@ -1,25 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
 :root {
   --tt-orange: #f05828;
   --tt-teal: #48c0b0;
   --tt-green: #709848;
   --tt-yellow: #f8a840;
   --tt-dark: #313131;
-  --tt-soft-teal: #e4f6f3;
-  --tt-soft-yellow: #fff5e7;
+  --tt-soft-teal: color-mix(in srgb, var(--tt-teal) 10%, var(--tt-white));
+  --tt-soft-yellow: color-mix(in srgb, var(--tt-yellow) 10%, var(--tt-white));
   --tt-white: #ffffff;
   --tt-ink: var(--tt-dark);
   --tt-muted: #625f5c;
-  --tt-line: #ddd8d2;
+  --tt-line: color-mix(in srgb, var(--tt-dark) 10%, transparent);
   --tt-surface: #fbfaf7;
   --tt-danger: #b42318;
-  --tt-radius: 8px;
-  --tt-radius-sm: 6px;
-  --tt-shadow:
-    0 1px 2px rgba(49, 49, 49, 0.08), 0 10px 24px rgba(49, 49, 49, 0.08);
-  --tt-focus: 0 0 0 3px rgba(72, 192, 176, 0.35);
-  --tt-font:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    sans-serif;
+  
+  /* Modern Squircle Curves */
+  --tt-radius: 16px;
+  --tt-radius-sm: 10px;
+  --tt-radius-md: 14px;
+  --tt-radius-lg: 24px;
+  
+  /* Beautifully Soft Layered Shadow Array */
+  --tt-shadow: 0 2px 4px rgba(49, 49, 49, 0.02), 0 8px 16px rgba(49, 49, 49, 0.04), 0 16px 32px rgba(49, 49, 49, 0.04);
+  
+  /* Premium Focus Ring Outline */
+  --tt-focus: 0 0 0 4px rgba(72, 192, 176, 0.24);
+  
+  /* Google Fonts Typography (Outfit for headings, Plus Jakarta Sans for body) */
+  --tt-font: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --heading: 'Outfit', system-ui, sans-serif;
+
+  /* Premium Glassmorphism Utility Variables */
+  --tt-glass-bg: rgba(255, 255, 255, 0.75);
+  --tt-glass-border: rgba(255, 255, 255, 0.45);
+  --tt-glass-shadow: 0 8px 32px 0 rgba(49, 49, 49, 0.04);
+  --tt-glass-blur: blur(16px);
 }
 
 * {
@@ -27,8 +44,20 @@
 }
 
 body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   color: var(--tt-ink);
   font-family: var(--tt-font);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--heading);
+  letter-spacing: -0.02em;
 }
 
 button,
@@ -44,8 +73,9 @@ a {
 
 :focus-visible {
   outline: 2px solid var(--tt-teal);
-  outline-offset: 2px;
+  outline-offset: 3px;
   box-shadow: var(--tt-focus);
+  transition: box-shadow 0.2s ease, outline-offset 0.2s ease;
 }
 
 .tt-sr-only {
@@ -74,19 +104,27 @@ a {
 }
 
 .tt-container {
-  width: min(100% - 2rem, 72rem);
+  width: min(100% - 3rem, 80rem);
   margin-inline: auto;
+  padding-inline: 0.5rem;
 }
 
 .tt-grid {
   display: grid;
-  gap: var(--tt-grid-gap, 1rem);
+  gap: var(--tt-grid-gap, 1.5rem);
   grid-template-columns: 1fr;
+}
+
+@media (min-width: 48rem) {
+  .tt-container {
+    padding-inline: 1.5rem;
+  }
 }
 
 @media (min-width: 42rem) {
   .tt-grid {
     grid-template-columns: repeat(var(--tt-grid-columns, 2), minmax(0, 1fr));
+    gap: var(--tt-grid-gap, 2rem);
   }
 }
 
@@ -190,9 +228,11 @@ a {
   gap: 0.25rem;
   padding: 0.5rem max(0.75rem, env(safe-area-inset-left))
     max(0.5rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-right));
-  border-top: 1px solid var(--tt-line);
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--tt-glass-border);
+  background: var(--tt-glass-bg);
+  backdrop-filter: var(--tt-glass-blur);
+  -webkit-backdrop-filter: var(--tt-glass-blur);
+  box-shadow: var(--tt-glass-shadow);
 }
 
 .tt-bottom-nav a,
@@ -224,10 +264,16 @@ a {
   gap: 1rem;
   align-items: stretch;
   justify-content: space-between;
-  padding: 1rem;
-  border-bottom: 1px solid var(--tt-line);
-  background: linear-gradient(180deg, var(--tt-white) 0%, var(--tt-surface) 100%);
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--tt-glass-border);
+  background: var(--tt-glass-bg);
+  backdrop-filter: var(--tt-glass-blur);
+  -webkit-backdrop-filter: var(--tt-glass-blur);
   color: var(--tt-dark);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.01);
 }
 
 .tt-brand-header__identity {
@@ -377,7 +423,7 @@ a {
   .tt-brand-header {
     flex-direction: row;
     align-items: center;
-    padding: 1rem 1.25rem;
+    padding: 1.25rem 2rem;
   }
 
   .tt-brand-header__title {

@@ -2,12 +2,14 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
   CONTENT_VERSION,
+  SOURCE_LIBRARY_VERSION,
   cohorts,
   learners,
   participants,
   trainingKnowledgeCheckItems,
   trainingLearningPaths,
   trainingScenarios,
+  trainingSourceLibrary,
 } from '../src/data/trainingData';
 import type { KnowledgeCheckItem, LearningPath, Module, Scenario } from '../src/types';
 import { hashPassword } from './auth';
@@ -77,6 +79,8 @@ async function dropAll(db: AppDatabase) {
       progress,
       facilitator_feedback,
       admin_audit_events,
+      notification_queue,
+      content_library_versions,
       content_development_requests,
       clearance_records,
       attendance_records,
@@ -97,6 +101,8 @@ async function dropAll(db: AppDatabase) {
       _progress,
       _facilitator_feedback,
       _admin_audit_events,
+      _notification_queue,
+      _content_library_versions,
       _content_development_requests,
       _clearance_records,
       _attendance_records,
@@ -491,6 +497,62 @@ const migrations = [
       ON auto_assignment_rules(active, priority, updated_at DESC);
   `,
   },
+  {
+    id: '009_notification_queue',
+    name: 'Phase 2 notification queue',
+    sql: `
+    CREATE TABLE IF NOT EXISTS notification_queue (
+      id UUID PRIMARY KEY,
+      type TEXT NOT NULL CHECK (type IN ('learner_invite', 'completion_digest', 'coaching_nudge', 'makeup_review', 'content_review', 'content_published')),
+      recipient_name TEXT NOT NULL,
+      recipient_email TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      owner TEXT NOT NULL,
+      priority TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
+      status TEXT NOT NULL CHECK (status IN ('draft', 'queued', 'sent', 'dismissed')),
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      scheduled_for TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      UNIQUE(type, entity_type, entity_id, recipient_email)
+    );
+
+    CREATE INDEX IF NOT EXISTS notification_queue_status_priority_idx
+      ON notification_queue(status, priority, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS notification_queue_entity_idx
+      ON notification_queue(entity_type, entity_id);
+  `,
+  },
+  {
+    id: '010_content_library_versions',
+    name: 'Phase 2 content library versioning',
+    sql: `
+    CREATE TABLE IF NOT EXISTS content_library_versions (
+      id TEXT PRIMARY KEY,
+      version TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('draft', 'review', 'approved', 'published', 'retired')),
+      content_request_id TEXT REFERENCES content_development_requests(id) ON DELETE SET NULL,
+      artifact_ids JSONB NOT NULL,
+      source_metrics JSONB NOT NULL,
+      review_owner TEXT NOT NULL,
+      review_notes TEXT NOT NULL DEFAULT '',
+      created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      approved_at TIMESTAMPTZ,
+      published_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS content_library_versions_status_idx
+      ON content_library_versions(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS content_library_versions_request_idx
+      ON content_library_versions(content_request_id);
+  `,
+  },
 ] satisfies Array<{ id: string; name: string; sql: string }>;
 
 async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
@@ -504,6 +566,7 @@ async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
     ['admin-1', seed.adminEmail.toLowerCase(), 'Think Together Admin', adminHash, 'admin', now],
   );
   await seedContentDevelopmentRequests(db, now);
+  await seedContentLibraryVersions(db, now);
 
   for (const path of trainingLearningPaths) {
     await db.query(
@@ -660,6 +723,38 @@ async function seedDatabase(db: AppDatabase, seed: SeedConfig) {
 
   await seedOperationalReadiness(db);
   await seedAutoAssignmentRules(db);
+}
+
+async function seedContentLibraryVersions(db: AppDatabase, now: string) {
+  await db.query(
+    `INSERT INTO content_library_versions
+      (id, version, title, status, content_request_id, artifact_ids, source_metrics,
+       review_owner, review_notes, created_by, created_at, approved_at, published_at)
+     VALUES ($1, $2, $3, 'published', NULL, $4, $5, $6, $7, $8, $9, $9, $9)
+     ON CONFLICT (version) DO UPDATE SET
+       title = EXCLUDED.title,
+       artifact_ids = EXCLUDED.artifact_ids,
+       source_metrics = EXCLUDED.source_metrics,
+       review_owner = EXCLUDED.review_owner,
+       review_notes = EXCLUDED.review_notes`,
+    [
+      'source-library-current',
+      SOURCE_LIBRARY_VERSION,
+      'Shared Think Together artifact baseline',
+      toJson(trainingSourceLibrary.map((artifact) => artifact.id)),
+      toJson({
+        artifacts: trainingSourceLibrary.length,
+        learningPaths: trainingLearningPaths.length,
+        modules: trainingLearningPaths.reduce((count, path) => count + path.modules.length, 0),
+        knowledgeChecks: trainingKnowledgeCheckItems.length,
+        scenarios: trainingScenarios.length,
+      }),
+      'Program Training & Development',
+      'Baseline release generated from the SOPs, PBIS decks, and knowledge-check materials shared for the MVP.',
+      'admin-1',
+      now,
+    ],
+  );
 }
 
 async function seedContentDevelopmentRequests(db: AppDatabase, now: string) {

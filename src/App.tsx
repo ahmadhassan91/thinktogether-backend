@@ -1,4 +1,21 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  BarChart3,
+  BookOpen,
+  BotMessageSquare,
+  CalendarDays,
+  Dumbbell,
+  FileText,
+  LayoutDashboard,
+  Map,
+  Menu,
+  Presentation,
+  Upload,
+  UserPlus,
+  Users,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import './App.css'
 import {
   acceptInvite,
@@ -18,8 +35,10 @@ import {
   getAdminAuditEvents,
   getAdminCohorts,
   getAdminLearners,
+  getAdminNotifications,
   getAdminSupervisorReport,
   getAiProviders,
+  getContentStudioTemplates,
   getAutoAssignmentRules,
   getLearningPath,
   getMe,
@@ -34,6 +53,7 @@ import {
   scoreScenario,
   searchSourceIntelligence,
   submitTrainingSurvey,
+  updateAdminNotificationStatus,
   updateContentDevelopmentRequestStatus,
   type AdminAuditEvent,
   type AdminCohort,
@@ -47,10 +67,12 @@ import {
   type AuthUser,
   type ContentStudioPackage,
   type ContentStudioDeliveryMode,
+  type ContentStudioTemplate,
   type ContentDevelopmentRequest,
   type ContentDevelopmentRequestInput,
   type LearningPathPayload,
   type LearnerProfile,
+  type NotificationQueueItem,
   type SourceLibraryPayload,
   type SourceQaFlagsPayload,
   type SourceSearchPayload,
@@ -69,17 +91,27 @@ import thinkTogetherLogo from './assets/think-together-logo.png'
 
 type WorkspaceView = 'learner' | 'practice' | 'assist' | 'admin' | 'users' | 'cohorts' | 'deck' | 'reporting' | 'plan'
 
-const navItems: Array<{ view: WorkspaceView; label: string }> = [
-  { view: 'learner', label: 'Learn' },
-  { view: 'practice', label: 'Practice' },
-  { view: 'assist', label: 'Assist' },
-  { view: 'admin', label: 'Admin' },
-  { view: 'users', label: 'Users' },
-  { view: 'cohorts', label: 'Cohorts' },
-  { view: 'deck', label: 'Decks' },
-  { view: 'reporting', label: 'Reporting' },
-  { view: 'plan', label: 'Plan' },
+type NavItem = {
+  view: WorkspaceView
+  label: string
+  section: 'Learning' | 'Operations' | 'Planning'
+  description: string
+  Icon: LucideIcon
+}
+
+const navItems: NavItem[] = [
+  { view: 'learner', label: 'Learn', section: 'Learning', description: 'Assigned path and checks', Icon: BookOpen },
+  { view: 'practice', label: 'Practice', section: 'Learning', description: 'Official scenario coaching', Icon: Dumbbell },
+  { view: 'assist', label: 'Ask AI', section: 'Learning', description: 'Source-grounded answers', Icon: BotMessageSquare },
+  { view: 'admin', label: 'Dashboard', section: 'Operations', description: 'Readiness and exports', Icon: LayoutDashboard },
+  { view: 'users', label: 'Learners', section: 'Operations', description: 'Add users and invites', Icon: Users },
+  { view: 'cohorts', label: 'Cohorts', section: 'Operations', description: 'Sessions and assignments', Icon: CalendarDays },
+  { view: 'deck', label: 'Deck Studio', section: 'Operations', description: 'Training package drafts', Icon: Presentation },
+  { view: 'reporting', label: 'Reporting', section: 'Operations', description: 'Supervisor and roster view', Icon: BarChart3 },
+  { view: 'plan', label: 'Roadmap', section: 'Planning', description: 'MVP and Phase 2 scope', Icon: Map },
 ]
+
+const navSections: NavItem['section'][] = ['Learning', 'Operations', 'Planning']
 
 const adminOnlyViews: WorkspaceView[] = ['admin', 'users', 'cohorts', 'deck', 'reporting']
 
@@ -96,6 +128,7 @@ function App() {
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
   const [dashboard, setDashboard] = useState<AdminDashboardPayload | null>(null)
   const [supervisorReport, setSupervisorReport] = useState<SupervisorReportPayload | null>(null)
+  const [notificationQueue, setNotificationQueue] = useState<NotificationQueueItem[]>([])
   const [adminLearners, setAdminLearners] = useState<AdminLearner[]>([])
   const [adminCohorts, setAdminCohorts] = useState<AdminCohort[]>([])
   const [adminAuditEvents, setAdminAuditEvents] = useState<AdminAuditEvent[]>([])
@@ -104,6 +137,7 @@ function App() {
   const [sourceQaFlags, setSourceQaFlags] = useState<SourceQaFlagsPayload | null>(null)
   const [selectedScenarioId, setSelectedScenarioId] = useState('')
   const [loadError, setLoadError] = useState('')
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get('invite'), [])
 
   const refreshWorkspace = useCallback(async (currentUser: AuthUser) => {
@@ -113,7 +147,16 @@ function App() {
     setSourceLibrary(sourcePayload)
 
     if (currentUser.role === 'admin') {
-      const [dashboardPayload, supervisorReportPayload, learnersPayload, cohortsPayload, auditPayload, usagePayload, qaFlagsPayload] = await Promise.all([
+      const [
+        dashboardPayload,
+        supervisorReportPayload,
+        learnersPayload,
+        cohortsPayload,
+        auditPayload,
+        usagePayload,
+        qaFlagsPayload,
+        notificationsPayload,
+      ] = await Promise.all([
         getAdminDashboard(),
         getAdminSupervisorReport(),
         getAdminLearners(),
@@ -121,9 +164,11 @@ function App() {
         getAdminAuditEvents(),
         getSourceUsageSummary(),
         getSourceQaFlags(),
+        getAdminNotifications(),
       ])
       setDashboard(dashboardPayload)
       setSupervisorReport(supervisorReportPayload)
+      setNotificationQueue(notificationsPayload.notifications)
       setAdminLearners(learnersPayload.learners)
       setAdminCohorts(cohortsPayload.cohorts)
       setAdminAuditEvents(auditPayload.events)
@@ -132,6 +177,7 @@ function App() {
     } else {
       setDashboard(null)
       setSupervisorReport(null)
+      setNotificationQueue([])
       setAdminLearners([])
       setAdminCohorts([])
       setAdminAuditEvents([])
@@ -168,7 +214,13 @@ function App() {
   )
 
   const visibleNavItems = user?.role === 'admin' ? navItems : navItems.filter((item) => !adminOnlyViews.includes(item.view))
-  const activeViewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
+  const activeViewItem = navItems.find((item) => item.view === view)
+  const activeViewLabel = activeViewItem?.label ?? 'Workspace'
+  const activeViewDescription = activeViewItem?.description ?? 'Training operations workspace'
+  const activeSectionLabel = user?.role === 'admin'
+    ? activeViewItem?.section ?? 'Workspace'
+    : 'Program Induction PBIS'
+  const showQuickActions = user?.role === 'admin' ? view === 'admin' : view === 'learner'
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -196,11 +248,22 @@ function App() {
     setProgress(null)
     setDashboard(null)
     setSupervisorReport(null)
+    setNotificationQueue([])
     setAdminLearners([])
     setAdminCohorts([])
     setAdminAuditEvents([])
     setSourceUsageSummary(null)
     setSourceQaFlags(null)
+  }
+
+  const handleWorkspaceNavigate = (nextView: WorkspaceView, targetId?: string) => {
+    setView(adminOnlyViews.includes(nextView) && user?.role !== 'admin' ? 'learner' : nextView)
+    setMobileNavOpen(false)
+    if (!targetId) return
+
+    window.setTimeout(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
   }
 
   const handleAcceptInvite = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -293,7 +356,29 @@ function App() {
   }
 
   return (
-    <div className="app-shell app-shell--workspace">
+    <div className="app-shell app-shell--workspace" data-nav-open={mobileNavOpen}>
+      <header className="mobile-appbar">
+        <div className="mobile-appbar__brand">
+          <img src={thinkTogetherLogo} alt="" aria-hidden="true" />
+          <span>Training Operations</span>
+        </div>
+        <button
+          aria-controls="workspace-navigation"
+          aria-expanded={mobileNavOpen}
+          aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          className="mobile-appbar__menu"
+          onClick={() => setMobileNavOpen((open) => !open)}
+          type="button"
+        >
+          {mobileNavOpen ? <X aria-hidden="true" size={22} /> : <Menu aria-hidden="true" size={22} />}
+        </button>
+      </header>
+      <button
+        aria-label="Close navigation menu"
+        className="app-sidebar__scrim"
+        onClick={() => setMobileNavOpen(false)}
+        type="button"
+      />
       <aside className="app-sidebar" aria-label="Workspace navigation">
         <div className="app-sidebar__brand">
           <img className="app-sidebar__logo" src={thinkTogetherLogo} alt="" aria-hidden="true" />
@@ -303,19 +388,37 @@ function App() {
           </div>
         </div>
 
-        <nav className="app-sidebar__nav" aria-label="MVP workspace">
-          {visibleNavItems.map((item) => (
-            <button
-              aria-current={view === item.view ? 'page' : undefined}
-              className="app-sidebar__nav-button"
-              data-active={view === item.view}
-              key={item.view}
-              onClick={() => setView(adminOnlyViews.includes(item.view) && user.role !== 'admin' ? 'learner' : item.view)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
+        <nav className="app-sidebar__nav" id="workspace-navigation" aria-label="MVP workspace">
+          {navSections.map((section) => {
+            const sectionItems = visibleNavItems.filter((item) => item.section === section)
+            if (!sectionItems.length) return null
+
+            return (
+              <div className="app-sidebar__nav-group" key={section}>
+                <span className="app-sidebar__nav-label">{section}</span>
+                {sectionItems.map((item) => {
+                  const Icon = item.Icon
+                  return (
+                    <button
+                      aria-label={item.label}
+                      aria-current={view === item.view ? 'page' : undefined}
+                      className="app-sidebar__nav-button"
+                      data-active={view === item.view}
+                      key={item.view}
+                      onClick={() => handleWorkspaceNavigate(item.view)}
+                      type="button"
+                    >
+                      <Icon aria-hidden="true" size={18} strokeWidth={2.3} />
+                      <span>
+                        <strong>{item.label}</strong>
+                        <small>{item.description}</small>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
         </nav>
 
         <div className="app-sidebar__account">
@@ -330,14 +433,22 @@ function App() {
       <main className="workspace-main">
         <header className="workspace-topbar">
           <div>
-            <p className="app-hero__label">{user.role === 'admin' ? 'Operations dashboard' : 'Program Induction PBIS'}</p>
+            <p className="app-hero__label">{activeSectionLabel}</p>
             <h1>{activeViewLabel}</h1>
+            <span>{activeViewDescription}</span>
           </div>
           <div className="workspace-topbar__meta" aria-label="Training scope">
             <span>{content.modules.length} modules</span>
             <span>{content.scenarios.length} scenarios</span>
           </div>
         </header>
+        {showQuickActions ? (
+          <WorkspaceQuickActions
+            activeView={view}
+            isAdmin={user.role === 'admin'}
+            onNavigate={handleWorkspaceNavigate}
+          />
+        ) : null}
 
         <div className="workspace-body">
           <div className="app-content">
@@ -350,6 +461,7 @@ function App() {
             progress,
             dashboard,
             supervisorReport,
+            notificationQueue,
             adminLearners,
             adminCohorts,
             adminAuditEvents,
@@ -423,6 +535,18 @@ function App() {
             },
             onUpdateContentRequestStatus: async (requestId, status, reviewNotes) => {
               await updateContentDevelopmentRequestStatus(requestId, status, reviewNotes)
+              const [supervisorReportPayload, auditPayload, notificationsPayload] = await Promise.all([
+                getAdminSupervisorReport(),
+                getAdminAuditEvents(),
+                getAdminNotifications(),
+              ])
+              setSupervisorReport(supervisorReportPayload)
+              setAdminAuditEvents(auditPayload.events)
+              setNotificationQueue(notificationsPayload.notifications)
+            },
+            onUpdateNotificationStatus: async (notificationId, status) => {
+              const payload = await updateAdminNotificationStatus(notificationId, status)
+              setNotificationQueue((items) => items.map((item) => (item.id === notificationId ? payload.notification : item)))
               const [supervisorReportPayload, auditPayload] = await Promise.all([
                 getAdminSupervisorReport(),
                 getAdminAuditEvents(),
@@ -463,7 +587,6 @@ function App() {
             },
             })}
           </div>
-          {user.role === 'admin' ? <SandboxReviewerPanel view={view} /> : null}
         </div>
       </main>
     </div>
@@ -478,6 +601,7 @@ function renderView({
   progress,
   dashboard,
   supervisorReport,
+  notificationQueue,
   adminLearners,
   adminCohorts,
   adminAuditEvents,
@@ -495,6 +619,7 @@ function renderView({
   onCreateCohort,
   onCreateContentRequest,
   onUpdateContentRequestStatus,
+  onUpdateNotificationStatus,
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
@@ -507,6 +632,7 @@ function renderView({
   progress: ProgressPayload
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
+  notificationQueue: NotificationQueueItem[]
   adminLearners: AdminLearner[]
   adminCohorts: AdminCohort[]
   adminAuditEvents: AdminAuditEvent[]
@@ -528,6 +654,7 @@ function renderView({
     status: ContentDevelopmentRequest['status'],
     reviewNotes: string,
   ) => Promise<void>
+  onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
   onCreateLearnerInvite: Parameters<typeof AdminDashboard>[0]['onCreateLearnerInvite']
   onRevokeLearnerInvite: Parameters<typeof AdminDashboard>[0]['onRevokeLearnerInvite']
   onDownloadExport: Parameters<typeof AdminDashboard>[0]['onDownloadExport']
@@ -575,10 +702,12 @@ function renderView({
       <SupervisorReportingPanel
         dashboard={dashboard}
         supervisorReport={supervisorReport}
+        notificationQueue={notificationQueue}
         learners={adminLearners}
         cohorts={adminCohorts}
         onCreateContentRequest={onCreateContentRequest}
         onUpdateContentRequestStatus={onUpdateContentRequestStatus}
+        onUpdateNotificationStatus={onUpdateNotificationStatus}
         onDownloadExport={onDownloadExport}
       />
     )
@@ -609,6 +738,71 @@ function renderView({
   )
 }
 
+function WorkspaceQuickActions({
+  activeView,
+  isAdmin,
+  onNavigate,
+}: {
+  activeView: WorkspaceView
+  isAdmin: boolean
+  onNavigate: (view: WorkspaceView, targetId?: string) => void
+}) {
+  const actions: Array<{ view: WorkspaceView; label: string; detail: string; Icon: LucideIcon; targetId?: string }> = isAdmin
+    ? [
+        { view: 'users', label: 'Invite learner', detail: 'Add one person or copy invite link', Icon: UserPlus },
+        {
+          view: 'reporting',
+          label: 'Preview roster',
+          detail: 'Paste weekly HR export and review assignments',
+          Icon: Upload,
+          targetId: 'assignment-preview-title',
+        },
+        { view: 'deck', label: 'Create training package', detail: 'Generate deck, check, practice, and handout', Icon: Presentation },
+        {
+          view: 'reporting',
+          label: 'Supervisor digest',
+          detail: 'Review follow-ups and export CSV',
+          Icon: FileText,
+          targetId: 'supervisor-actions-title',
+        },
+      ]
+    : [
+        { view: 'learner', label: 'Continue path', detail: 'Complete assigned modules', Icon: BookOpen },
+        { view: 'practice', label: 'Practice scenario', detail: 'Get coaching feedback', Icon: Dumbbell },
+        { view: 'assist', label: 'Ask AI', detail: 'Use Think Together sources', Icon: BotMessageSquare },
+      ]
+
+  return (
+    <section className="workspace-actions" aria-label="Recommended actions">
+      <div>
+        <p className="app-hero__label">{isAdmin ? 'Quick launch' : 'Next steps'}</p>
+        <strong>{isAdmin ? 'Choose the job you need to do' : 'Your learner workflow'}</strong>
+      </div>
+      <div className="workspace-actions__list">
+        {actions.map((action) => {
+          const Icon = action.Icon
+          return (
+            <button
+              aria-label={action.label}
+              className="workspace-actions__button"
+              data-active={activeView === action.view}
+              key={`${action.view}-${action.label}`}
+              onClick={() => onNavigate(action.view, action.targetId)}
+              type="button"
+            >
+              <Icon aria-hidden="true" size={18} strokeWidth={2.4} />
+              <span>
+                <strong>{action.label}</strong>
+                <small>{action.detail}</small>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: boolean }) {
   if (!isAdmin || !['users', 'cohorts', 'deck', 'reporting'].includes(view)) return null
 
@@ -630,8 +824,8 @@ function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: bool
     },
     reporting: {
       label: 'Supervisor view',
-      title: 'Reporting is visible for MVP review.',
-      body: 'Current dashboard data is summarized here while richer supervisor drilldowns and scheduled exports come next.',
+      title: 'Use Reporting to answer the client’s biggest operations questions.',
+      body: 'Start with roster preview, then review supervisor follow-ups, content requests, and exports from one place.',
     },
   }
   const helper = copy[view]
@@ -645,47 +839,20 @@ function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: bool
   )
 }
 
-function SandboxReviewerPanel({ view }: { view: WorkspaceView }) {
-  const [notes, setNotes] = useState('')
-  const viewLabel = navItems.find((item) => item.view === view)?.label ?? 'Workspace'
-
-  return (
-    <aside className="sandbox-reviewer" aria-labelledby="sandbox-reviewer-title">
-      <div>
-        <p className="app-hero__label">Sandbox review</p>
-        <h2 id="sandbox-reviewer-title">Reviewer notes</h2>
-        <p>
-          Capture what feels unclear, missing, or demo-ready while moving through {viewLabel}.
-        </p>
-      </div>
-      <label>
-        Notes for follow-up
-        <textarea
-          onChange={(event) => setNotes(event.target.value)}
-          placeholder="Example: Cohort labels are clear, but supervisor export needs owner/date."
-          value={notes}
-        />
-      </label>
-      <div className="sandbox-reviewer__prompts" aria-label="Review prompts">
-        <span>Could a regional supervisor read this without training?</span>
-        <span>Is any ID, status, or export boundary unclear?</span>
-        <span>What should be promoted before pilot handoff?</span>
-      </div>
-    </aside>
-  )
-}
-
 function SupervisorReportingPanel({
   dashboard,
   supervisorReport,
+  notificationQueue,
   learners,
   cohorts,
   onCreateContentRequest,
   onUpdateContentRequestStatus,
+  onUpdateNotificationStatus,
   onDownloadExport,
 }: {
   dashboard: AdminDashboardPayload | null
   supervisorReport: SupervisorReportPayload | null
+  notificationQueue: NotificationQueueItem[]
   learners: AdminLearner[]
   cohorts: AdminCohort[]
   onCreateContentRequest: (input: ContentDevelopmentRequestInput) => Promise<void>
@@ -694,6 +861,7 @@ function SupervisorReportingPanel({
     status: ContentDevelopmentRequest['status'],
     reviewNotes: string,
   ) => Promise<void>
+  onUpdateNotificationStatus: (notificationId: string, status: NotificationQueueItem['status']) => Promise<void>
   onDownloadExport?: (kind: 'supervisor-digest') => Promise<void> | void
 }) {
   const sampleRosterCsv = [
@@ -720,6 +888,8 @@ function SupervisorReportingPanel({
   const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreviewPayload | null>(null)
   const [assignmentLoading, setAssignmentLoading] = useState(false)
   const [assignmentError, setAssignmentError] = useState('')
+  const [notificationSavingId, setNotificationSavingId] = useState('')
+  const [notificationError, setNotificationError] = useState('')
   const supervisorGroups = supervisorReport?.groups?.supervisors ?? []
   const facilitatorGroups = supervisorReport?.groups?.facilitators ?? []
   const cohortGroups = supervisorReport?.groups?.cohorts ?? []
@@ -731,6 +901,8 @@ function SupervisorReportingPanel({
   const contentRequests = supervisorReport?.contentDevelopmentRequests ?? []
   const rolloutForecast = supervisorReport?.rolloutForecast
   const notificationPreviews = supervisorReport?.completionNotifications ?? []
+  const queuedNotifications = notificationQueue.filter((item) => item.status === 'queued' || item.status === 'draft')
+  const sentNotifications = notificationQueue.filter((item) => item.status === 'sent')
   const missingCohorts = learners.filter((learnerItem) => !learnerItem.cohortId || !learnerItem.cohortName).length
   const pendingInvites = learners.filter((learnerItem) => learnerItem.inviteStatus === 'pending').length
 
@@ -813,6 +985,18 @@ function SupervisorReportingPanel({
     }
   }
 
+  const handleNotificationStatus = async (notificationId: string, status: NotificationQueueItem['status']) => {
+    setNotificationSavingId(notificationId)
+    setNotificationError('')
+    try {
+      await onUpdateNotificationStatus(notificationId, status)
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : 'Unable to update notification status')
+    } finally {
+      setNotificationSavingId('')
+    }
+  }
+
   return (
     <main className="reporting-view" aria-labelledby="reporting-title">
       <header>
@@ -889,15 +1073,85 @@ function SupervisorReportingPanel({
               )}
             </article>
           </section>
-          <section className="reporting-view__table" aria-labelledby="assignment-preview-title">
+          <section className="reporting-view__table" aria-labelledby="notification-queue-title">
+            <div className="reporting-view__section-heading">
+              <div>
+                <p className="app-hero__label">Notification workflow</p>
+                <h2 id="notification-queue-title">Notification queue</h2>
+                <p>Review generated supervisor follow-ups, content review alerts, and published-training notices before email integration is switched on.</p>
+              </div>
+              <span>{queuedNotifications.length} queued · {sentNotifications.length} sent</span>
+            </div>
+            {queuedNotifications.length ? (
+              <table className="reporting-table reporting-table--notifications">
+                <thead>
+                  <tr>
+                    <th>Recipient</th>
+                    <th>Message</th>
+                    <th>Owner</th>
+                    <th>Priority</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {queuedNotifications.map((item) => (
+                    <tr key={item.id}>
+                      <td data-label="Recipient">
+                        <strong>{item.recipientName}</strong>
+                        <small>{item.recipientEmail}</small>
+                      </td>
+                      <td data-label="Message">
+                        <strong>{item.subject}</strong>
+                        <small>{item.body}</small>
+                      </td>
+                      <td data-label="Owner">{item.owner}</td>
+                      <td data-label="Priority">
+                        <span className="reporting-chip" data-priority={item.priority}>{item.priority}</span>
+                      </td>
+                      <td data-label="Actions">
+                        <div className="notification-actions">
+                          <button
+                            className="button-secondary"
+                            disabled={notificationSavingId === item.id}
+                            onClick={() => void handleNotificationStatus(item.id, 'sent')}
+                            type="button"
+                          >
+                            Mark sent
+                          </button>
+                          <button
+                            className="button-secondary"
+                            disabled={notificationSavingId === item.id}
+                            onClick={() => void handleNotificationStatus(item.id, 'dismissed')}
+                            type="button"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p>No notification drafts are queued. Completion records and content review gates will create reviewable messages here.</p>
+            )}
+            {notificationError ? <p role="alert">{notificationError}</p> : null}
+          </section>
+          <section className="reporting-view__table reporting-view__table--assignment-preview" aria-labelledby="assignment-preview-title">
             <div className="reporting-view__section-heading">
               <div>
                 <p className="app-hero__label">Roster automation</p>
                 <h2 id="assignment-preview-title">Weekly roster assignment preview</h2>
+                <p>Paste an HR/ADP roster export, preview the automatic rules, then hold exceptions for Training Ops review.</p>
               </div>
               <span>{assignmentRules.filter((rule) => rule.active).length} active rules</span>
             </div>
             <div className="assignment-preview">
+              <div className="assignment-preview__workflow" aria-label="Roster preview workflow">
+                <span><strong>1</strong> Paste roster CSV</span>
+                <span><strong>2</strong> Match title and region rules</span>
+                <span><strong>3</strong> Queue invites or hold review</span>
+              </div>
               <div className="assignment-preview__rules" aria-label="Auto-assignment rules">
                 {assignmentRules.map((rule) => (
                   <article key={rule.id}>
@@ -920,12 +1174,24 @@ function SupervisorReportingPanel({
                   spellCheck={false}
                 />
               </label>
-              <button type="button" onClick={() => void handleAssignmentPreview()} disabled={assignmentLoading}>
-                {assignmentLoading ? 'Previewing roster...' : 'Preview assignments'}
-              </button>
+              <div className="assignment-preview__actions">
+                <button className="button-secondary" type="button" onClick={() => setAssignmentCsv(sampleRosterCsv)}>
+                  Use sample roster
+                </button>
+                <button type="button" onClick={() => void handleAssignmentPreview()} disabled={assignmentLoading}>
+                  {assignmentLoading ? 'Previewing roster...' : 'Preview assignments'}
+                </button>
+              </div>
               {assignmentError ? <p role="alert">{assignmentError}</p> : null}
               {assignmentPreview ? (
                 <div className="assignment-preview__results">
+                  <div className="assignment-preview__result-header">
+                    <div>
+                      <p className="app-hero__label">Decision preview</p>
+                      <h3>Review before invites go out</h3>
+                    </div>
+                    <span>Generated {new Date(assignmentPreview.generatedAt).toLocaleTimeString()}</span>
+                  </div>
                   <div className="reporting-view__metrics" aria-label="Assignment preview summary">
                     <span><strong>{assignmentPreview.summary.totalRows}</strong> roster rows</span>
                     <span><strong>{assignmentPreview.summary.autoAssignable}</strong> auto-assign</span>
@@ -1330,45 +1596,10 @@ function MilestonePlan({
 
 
 function DeckStudio() {
-  const contentRequestStarters: Array<{
-    id: string
-    label: string
-    topic: string
-    audience: string
-    durationMinutes: number
-    deliveryMode: ContentStudioDeliveryMode
-    outputs: string
-  }> = [
-    {
-      id: 'behavior-management',
-      label: 'Behavior management request',
-      topic: 'Behavior management with PBIS restorative responses',
-      audience: 'Think Together program staff and site leaders',
-      durationMinutes: 60,
-      deliveryMode: 'hybrid',
-      outputs: 'Deck + knowledge check + practice scenarios + handout',
-    },
-    {
-      id: 'virtual-makeup',
-      label: 'Virtual makeup path',
-      topic: 'Virtual Program Induction makeup training',
-      audience: 'New hires who missed in-person induction',
-      durationMinutes: 35,
-      deliveryMode: 'virtual',
-      outputs: 'Self-paced outline + final check + completion receipt',
-    },
-    {
-      id: 'trainer-template',
-      label: 'Trainer template starter',
-      topic: 'Standardized training template with objectives and application',
-      audience: 'Think Together training development team',
-      durationMinutes: 45,
-      deliveryMode: 'in-person',
-      outputs: 'Facilitator guide + reusable section structure + review checklist',
-    },
-  ]
   const [providers, setProviders] = useState<AiProviderStatus[]>([])
+  const [templates, setTemplates] = useState<ContentStudioTemplate[]>([])
   const [provider, setProvider] = useState<AiDeckProvider>('openai')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('core-in-person-training')
   const [topic, setTopic] = useState('Effective lesson delivery with 10:2 practice')
   const [audience, setAudience] = useState('Think Together program leaders')
   const [durationMinutes, setDurationMinutes] = useState(45)
@@ -1388,8 +1619,14 @@ function DeckStudio() {
   )
 
   useEffect(() => {
-    void getAiProviders()
-      .then((payload) => setProviders(payload.providers))
+    void Promise.all([getAiProviders(), getContentStudioTemplates()])
+      .then(([providerPayload, templatePayload]) => {
+        setProviders(providerPayload.providers)
+        setTemplates(templatePayload.templates)
+        if (templatePayload.templates.length > 0) {
+          setSelectedTemplateId(templatePayload.templates[0].id)
+        }
+      })
       .catch((error) => setDeckError(error instanceof Error ? error.message : 'Unable to load AI providers.'))
   }, [])
 
@@ -1398,6 +1635,16 @@ function DeckStudio() {
     ?? deckProviders[0]
   const effectiveProvider = deckProviders.some((item) => item.id === provider) ? provider : fallbackProvider?.id ?? provider
   const selectedProvider = deckProviders.find((item) => item.id === effectiveProvider)
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId)
+
+  const applyTemplate = (template: ContentStudioTemplate) => {
+    setSelectedTemplateId(template.id)
+    setTopic(template.topicStarter)
+    setAudience(template.audience)
+    setDurationMinutes(template.durationMinutes)
+    setDeliveryMode(template.deliveryMode)
+    setContentPackage(null)
+  }
 
   const handleGenerateDeck = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1431,11 +1678,12 @@ function DeckStudio() {
     try {
       const payload = await createContentStudioPackage({
         provider: effectiveProvider,
+        templateId: selectedTemplate?.id ?? selectedTemplateId,
         topic,
         audience,
         durationMinutes,
         deliveryMode,
-        sourceArtifactIds: outline?.sourceArtifacts,
+        sourceArtifactIds: outline?.sourceArtifacts ?? selectedTemplate?.sourceArtifactIds,
       })
       setContentPackage(payload.package)
     } catch (error) {
@@ -1449,11 +1697,11 @@ function DeckStudio() {
     <main className="deck-page" aria-labelledby="deck-studio-title">
       <section className="deck-studio">
         <div className="deck-studio__hero">
-          <p className="app-hero__label">AI deck generator</p>
+          <p className="app-hero__label">Content development studio</p>
           <h1 id="deck-studio-title">Training Deck Studio</h1>
           <p>
-            Generate a source-grounded facilitator deck and export an editable PowerPoint using the PBIS and SOP artifacts.
-            OpenAI Premium is the default when configured; Gemini remains available as the fast fallback.
+            Turn a weekly training request into a source-grounded package: editable PowerPoint, knowledge check, practice
+            scenario, handout, and review notes. This is the main workflow for reducing trainer content-development time.
           </p>
         </div>
 
@@ -1474,6 +1722,21 @@ function DeckStudio() {
                   <option value="openai">OpenAI Premium</option>
                   <option value="gemini">Gemini Flash</option>
                   <option value="claude">Claude Sonnet</option>
+                </select>
+              </label>
+              <label>
+                Template
+                <select
+                  value={selectedTemplateId}
+                  onChange={(event) => {
+                    const template = templates.find((item) => item.id === event.target.value)
+                    if (template) applyTemplate(template)
+                    else setSelectedTemplateId(event.target.value)
+                  }}
+                >
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>{template.name}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -1504,14 +1767,28 @@ function DeckStudio() {
                   </label>
               <div className="deck-form__actions">
                 <button disabled={isGenerating || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8} type="submit">
-                  {isGenerating ? 'Generating preview' : 'Generate preview'}
+                  {isGenerating ? (
+                    <>
+                      <span className="tt-spinner" aria-hidden="true" />
+                      Generating preview...
+                    </>
+                  ) : (
+                    'Generate preview'
+                  )}
                 </button>
                 <button
                   disabled={isDownloadingPptx || !selectedProvider?.configured || selectedProvider.mode !== 'sync' || topic.length < 8}
                   onClick={handleDownloadPptx}
                   type="button"
                 >
-                  {isDownloadingPptx ? 'Building PowerPoint' : 'Download PowerPoint'}
+                  {isDownloadingPptx ? (
+                    <>
+                      <span className="tt-spinner" aria-hidden="true" />
+                      Building PowerPoint...
+                    </>
+                  ) : (
+                    'Download PowerPoint'
+                  )}
                 </button>
                 <button
                   className="button-secondary"
@@ -1519,7 +1796,14 @@ function DeckStudio() {
                   onClick={handleGenerateContentPackage}
                   type="button"
                 >
-                  {isGeneratingPackage ? 'Building content package' : 'Generate full package'}
+                  {isGeneratingPackage ? (
+                    <>
+                      <span className="tt-spinner" aria-hidden="true" />
+                      Building content package...
+                    </>
+                  ) : (
+                    'Generate full package'
+                  )}
                 </button>
               </div>
               {deckError ? <p role="alert">{deckError}</p> : null}
@@ -1529,33 +1813,49 @@ function DeckStudio() {
           <aside className="deck-studio__quality" aria-label="Deck quality system">
             <p className="app-hero__label">Output standard</p>
             <h2>Facilitator-ready, editable PowerPoint</h2>
+            <div className="deck-studio__workflow" aria-label="Content creation workflow">
+              <span><strong>1</strong> Request</span>
+              <span><strong>2</strong> Source-map</span>
+              <span><strong>3</strong> Draft</span>
+              <span><strong>4</strong> Review</span>
+            </div>
             <div className="deck-studio__proof">
               <span>Source-linked evidence strip</span>
               <span>PBIS/SOP artifact grounding</span>
               <span>Editable infographic shapes</span>
               <span>Human review gate</span>
             </div>
+            {selectedTemplate ? (
+              <div className="template-detail">
+                <strong>{selectedTemplate.name}</strong>
+                <span>{selectedTemplate.bestFor}</span>
+                <ol>
+                  {selectedTemplate.structure.slice(0, 4).map((step) => (
+                    <li key={step.label}>
+                      <b>{step.label}</b>
+                      {step.purpose}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
 
             <section className="content-starters" aria-label="Phase 2 content request starters">
               <div>
-                <p className="app-hero__label">Phase 2 request intake</p>
-                <h2>Start from a real training request</h2>
-                <p>Use these starters to show how weekly content requests become a deck, knowledge check, practice lab, and handout.</p>
+                <p className="app-hero__label">Reusable templates</p>
+                <h2>Standardize course development</h2>
+                <p>Pick a template to align every new request to objectives, application, checks, resources, and review gates.</p>
               </div>
               <div className="content-starters__grid">
-                {contentRequestStarters.map((starter) => (
+                {templates.map((template) => (
                   <button
-                    key={starter.id}
-                    onClick={() => {
-                      setTopic(starter.topic)
-                      setAudience(starter.audience)
-                      setDurationMinutes(starter.durationMinutes)
-                      setDeliveryMode(starter.deliveryMode)
-                    }}
+                    aria-pressed={template.id === selectedTemplateId}
+                    key={template.id}
+                    onClick={() => applyTemplate(template)}
                     type="button"
                   >
-                    <strong>{starter.label}</strong>
-                    <span>{starter.outputs}</span>
+                    <strong>{template.name}</strong>
+                    <span>{template.requiredOutputs.join(' + ')}</span>
                   </button>
                 ))}
               </div>
@@ -1601,6 +1901,13 @@ function DeckStudio() {
               </p>
             </div>
             <div className="content-package__grid">
+              <article>
+                <h3>Template QA</h3>
+                <strong>{contentPackage.template.name}</strong>
+                <ul>
+                  {contentPackage.template.reviewChecklist.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </article>
               <article>
                 <h3>Objectives</h3>
                 <ul>
@@ -1828,6 +2135,7 @@ function SourceLibraryPanel({ sourceLibrary }: { sourceLibrary: SourceLibraryPay
   if (!sourceLibrary) return null
   const artifacts = sourceLibrary.artifacts ?? []
   const learningPaths = sourceLibrary.learningPaths ?? []
+  const releases = sourceLibrary.releases ?? []
 
   return (
     <section className="source-library" aria-labelledby="source-library-title">
@@ -1853,6 +2161,25 @@ function SourceLibraryPanel({ sourceLibrary }: { sourceLibrary: SourceLibraryPay
           </article>
         ))}
       </div>
+      {releases.length ? (
+        <div className="source-library__releases" aria-label="Content library versions">
+          <div>
+            <p className="app-hero__label">Version control</p>
+            <h3>Content Library Releases</h3>
+          </div>
+          {releases.slice(0, 4).map((release) => (
+            <article key={release.id}>
+              <span className="reporting-chip" data-status={release.status}>{release.status}</span>
+              <strong>{release.title}</strong>
+              <small>{release.version}</small>
+              <p>{release.reviewNotes}</p>
+              <small>
+                Owner: {release.reviewOwner} · {release.artifactIds.length} artifacts · {release.publishedAt ? 'published' : 'review gate'}
+              </small>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }

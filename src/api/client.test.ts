@@ -10,13 +10,17 @@ import {
   downloadAdminExport,
   getAdminCohorts,
   getAdminLearners,
+  getAdminNotifications,
   getAutoAssignmentRules,
   getAiProviders,
+  getContentStudioTemplates,
   getMe,
+  getSourceLibrary,
   previewAssignmentCsv,
   revokeLearnerInvite,
   storeToken,
   submitTrainingSurvey,
+  updateAdminNotificationStatus,
 } from './client'
 
 const fetchMock = vi.fn()
@@ -246,6 +250,108 @@ describe('admin management client', () => {
     expect((previewInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 
+  it('loads source library releases with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock.mockResolvedValueOnce(json({
+      sourceLibraryVersion: 'think-training-source-library-test',
+      artifacts: [],
+      learningPaths: [],
+      releases: [
+        {
+          id: 'source-library-current',
+          version: 'think-training-source-library-test',
+          title: 'Shared Think Together artifact baseline',
+          status: 'published',
+          contentRequestId: null,
+          artifactIds: ['pbis-ppt-master'],
+          sourceMetrics: { artifacts: 1 },
+          reviewOwner: 'Program Training & Development',
+          reviewNotes: 'Baseline release.',
+          createdBy: 'admin-1',
+          createdAt: '2026-05-24T00:00:00.000Z',
+          approvedAt: '2026-05-24T00:00:00.000Z',
+          publishedAt: '2026-05-24T00:00:00.000Z',
+        },
+      ],
+    }))
+
+    await expect(getSourceLibrary()).resolves.toMatchObject({
+      releases: [
+        {
+          id: 'source-library-current',
+          status: 'published',
+          reviewOwner: 'Program Training & Development',
+        },
+      ],
+    })
+
+    const sourceInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/source-library')
+    expect((sourceInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+  })
+
+  it('loads and updates the admin notification queue with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock
+      .mockResolvedValueOnce(json({
+        notifications: [
+          {
+            id: 'notification-1',
+            type: 'content_review',
+            recipientName: 'Program Training & Development',
+            recipientEmail: 'program.training.development@thinktogether.local',
+            subject: 'Review needed: Behavior management training',
+            body: 'Human review is needed before pilot delivery.',
+            owner: 'Program Training & Development',
+            priority: 'high',
+            status: 'queued',
+            entityType: 'content_request',
+            entityId: 'request-1',
+            metadata: {},
+            scheduledFor: null,
+            sentAt: null,
+            createdAt: '2026-05-24T00:00:00.000Z',
+            updatedAt: '2026-05-24T00:00:00.000Z',
+          },
+        ],
+      }))
+      .mockResolvedValueOnce(json({
+        notification: {
+          id: 'notification-1',
+          type: 'content_review',
+          recipientName: 'Program Training & Development',
+          recipientEmail: 'program.training.development@thinktogether.local',
+          subject: 'Review needed: Behavior management training',
+          body: 'Human review is needed before pilot delivery.',
+          owner: 'Program Training & Development',
+          priority: 'high',
+          status: 'sent',
+          entityType: 'content_request',
+          entityId: 'request-1',
+          metadata: {},
+          scheduledFor: null,
+          sentAt: '2026-05-24T00:01:00.000Z',
+          createdAt: '2026-05-24T00:00:00.000Z',
+          updatedAt: '2026-05-24T00:01:00.000Z',
+        },
+      }))
+
+    await expect(getAdminNotifications()).resolves.toMatchObject({
+      notifications: [{ id: 'notification-1', status: 'queued' }],
+    })
+    await expect(updateAdminNotificationStatus('notification-1', 'sent')).resolves.toMatchObject({
+      notification: { id: 'notification-1', status: 'sent' },
+    })
+
+    const updateInit = fetchMock.mock.calls[1][1] as RequestInit
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/notifications')
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toBeInstanceOf(Headers)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/notifications/notification-1/status')
+    expect(updateInit.method).toBe('PATCH')
+    expect(updateInit.body).toBe(JSON.stringify({ status: 'sent' }))
+    expect((updateInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+  })
+
   it('posts learner training survey feedback with the expected API shape', async () => {
     storeToken('learner-token')
     fetchMock.mockResolvedValueOnce(json({
@@ -364,6 +470,12 @@ describe('admin management client', () => {
       package: {
         provider: 'deterministic',
         model: 'content-studio-fallback-v1',
+        template: {
+          id: 'core-in-person-training',
+          name: 'Core In-Person Training',
+          requiredOutputs: ['Deck', 'Knowledge check', 'Practice lab', 'Handout'],
+          reviewChecklist: ['Objectives are measurable', 'Application is visible'],
+        },
         title: 'PBIS practice lab',
         learningObjectives: ['Explain PBIS routines', 'Practice explicit teaching'],
         deckOutline: [],
@@ -378,6 +490,8 @@ describe('admin management client', () => {
     }))
 
     await expect(createContentStudioPackage({
+      provider: 'openai',
+      templateId: 'core-in-person-training',
       topic: 'PBIS practice lab',
       audience: 'Program leaders',
       durationMinutes: 60,
@@ -394,6 +508,8 @@ describe('admin management client', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/content-studio/packages')
     expect(packageInit.method).toBe('POST')
     expect(packageInit.body).toBe(JSON.stringify({
+      provider: 'openai',
+      templateId: 'core-in-person-training',
       topic: 'PBIS practice lab',
       audience: 'Program leaders',
       durationMinutes: 60,
@@ -401,6 +517,35 @@ describe('admin management client', () => {
       sourceArtifactIds: ['pbis-ppt-master'],
     }))
     expect((packageInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+  })
+
+  it('loads Content Studio reusable templates with auth headers', async () => {
+    storeToken('admin-token')
+    fetchMock.mockResolvedValueOnce(json({
+      templates: [
+        {
+          id: 'core-in-person-training',
+          name: 'Core In-Person Training',
+          description: 'Build a facilitator-led training package.',
+          bestFor: 'Weekly requests.',
+          deliveryMode: 'in-person',
+          audience: 'Program leaders',
+          durationMinutes: 45,
+          topicStarter: 'PBIS lesson delivery',
+          sourceArtifactIds: ['pbis-ppt-master'],
+          requiredOutputs: ['Deck'],
+          structure: [{ label: 'Objectives', purpose: 'Name outcomes.' }],
+          reviewChecklist: ['Review objectives'],
+        },
+      ],
+    }))
+
+    await expect(getContentStudioTemplates()).resolves.toMatchObject({
+      templates: [{ id: 'core-in-person-training', name: 'Core In-Person Training' }],
+    })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/content-studio/templates')
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 })
 

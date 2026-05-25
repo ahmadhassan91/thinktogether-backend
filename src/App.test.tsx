@@ -40,6 +40,30 @@ beforeEach(() => {
     if (url.endsWith('/api/progress')) {
       return json({ completedModuleIds: [], progress: [], practiceSubmissions: [] })
     }
+    if (url.endsWith('/api/source-library')) {
+      return json({
+        sourceLibraryVersion: 'think-training-source-library-test',
+        artifacts: [],
+        learningPaths: [],
+        releases: [
+          {
+            id: 'source-library-current',
+            version: 'think-training-source-library-test',
+            title: 'Shared Think Together artifact baseline',
+            status: 'published',
+            contentRequestId: null,
+            artifactIds: ['pbis-ppt-master'],
+            sourceMetrics: { artifacts: 1 },
+            reviewOwner: 'Program Training & Development',
+            reviewNotes: 'Baseline release from the shared SOP, PBIS, and knowledge-check artifacts.',
+            createdBy: 'admin-1',
+            createdAt: '2026-05-24T00:00:00.000Z',
+            approvedAt: '2026-05-24T00:00:00.000Z',
+            publishedAt: '2026-05-24T00:00:00.000Z',
+          },
+        ],
+      })
+    }
     if (url.endsWith('/api/admin/dashboard')) {
       return json({
         kpis: {
@@ -79,6 +103,72 @@ beforeEach(() => {
           estimatedTrainerHoursSaved: 12,
         },
         completionNotifications: [],
+        notificationQueue: [
+          {
+            id: 'notification-1',
+            type: 'content_review',
+            recipientName: 'Program Training & Development',
+            recipientEmail: 'program.training.development@thinktogether.local',
+            subject: 'Review needed: Behavior management training',
+            body: 'Human review is needed before pilot delivery.',
+            owner: 'Program Training & Development',
+            priority: 'high',
+            status: 'queued',
+            entityType: 'content_request',
+            entityId: 'behavior-management-request',
+            metadata: {},
+            scheduledFor: null,
+            sentAt: null,
+            createdAt: '2026-05-24T00:00:00.000Z',
+            updatedAt: '2026-05-24T00:00:00.000Z',
+          },
+        ],
+      })
+    }
+    if (url.endsWith('/api/admin/notifications')) {
+      return json({
+        notifications: [
+          {
+            id: 'notification-1',
+            type: 'content_review',
+            recipientName: 'Program Training & Development',
+            recipientEmail: 'program.training.development@thinktogether.local',
+            subject: 'Review needed: Behavior management training',
+            body: 'Human review is needed before pilot delivery.',
+            owner: 'Program Training & Development',
+            priority: 'high',
+            status: 'queued',
+            entityType: 'content_request',
+            entityId: 'behavior-management-request',
+            metadata: {},
+            scheduledFor: null,
+            sentAt: null,
+            createdAt: '2026-05-24T00:00:00.000Z',
+            updatedAt: '2026-05-24T00:00:00.000Z',
+          },
+        ],
+      })
+    }
+    if (url.includes('/api/admin/notifications/')) {
+      return json({
+        notification: {
+          id: 'notification-1',
+          type: 'content_review',
+          recipientName: 'Program Training & Development',
+          recipientEmail: 'program.training.development@thinktogether.local',
+          subject: 'Review needed: Behavior management training',
+          body: 'Human review is needed before pilot delivery.',
+          owner: 'Program Training & Development',
+          priority: 'high',
+          status: 'sent',
+          entityType: 'content_request',
+          entityId: 'behavior-management-request',
+          metadata: {},
+          scheduledFor: null,
+          sentAt: '2026-05-24T00:01:00.000Z',
+          createdAt: '2026-05-24T00:00:00.000Z',
+          updatedAt: '2026-05-24T00:01:00.000Z',
+        },
       })
     }
     if (url.endsWith('/api/admin/content-requests')) {
@@ -129,6 +219,43 @@ beforeEach(() => {
         ],
       })
     }
+    if (url.endsWith('/api/content-studio/templates')) {
+      return json({
+        templates: [
+          {
+            id: 'core-in-person-training',
+            name: 'Core In-Person Training',
+            description: 'Build a facilitator-led training package.',
+            bestFor: 'Weekly requests that need a consistent deck, practice, checks, and handout.',
+            deliveryMode: 'in-person',
+            audience: 'Think Together program leaders',
+            durationMinutes: 45,
+            topicStarter: 'Effective lesson delivery with 10:2 practice',
+            sourceArtifactIds: ['pbis-ppt-master', 'sop-program-induction'],
+            requiredOutputs: ['Deck', 'Knowledge check', 'Practice lab', 'Handout'],
+            structure: [
+              { label: 'Objectives', purpose: 'Name 2-3 learner outcomes.' },
+              { label: 'Application', purpose: 'Give learners time to try the skill.' },
+            ],
+            reviewChecklist: ['Objectives are measurable', 'Application is visible'],
+          },
+          {
+            id: 'virtual-makeup-path',
+            name: 'Virtual Makeup Path',
+            description: 'Convert missed in-person training into a virtual path.',
+            bestFor: 'New hires who miss induction.',
+            deliveryMode: 'virtual',
+            audience: 'New hires who missed in-person induction',
+            durationMinutes: 35,
+            topicStarter: 'Virtual Program Induction makeup training',
+            sourceArtifactIds: ['sop-program-induction'],
+            requiredOutputs: ['Self-paced guide', 'Final check'],
+            structure: [{ label: 'Watch', purpose: 'Make content self-paced.' }],
+            reviewChecklist: ['Completion evidence is clear'],
+          },
+        ],
+      })
+    }
     if (url.endsWith('/api/ai/deck-outline-jobs')) {
       return json({ job: { id: 'outline-job-1', status: 'queued' } })
     }
@@ -175,7 +302,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('navigation', { name: /MVP workspace/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
   })
 
@@ -189,29 +316,35 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next official scenario' }))
     expect(screen.getByRole('heading', { name: 'Physical Fight During Transition' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Admin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
     expect(screen.getByRole('heading', { name: 'Training Operations Dashboard' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Users' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Learners' }))
     expect(screen.getByRole('heading', { name: 'Learners and Invites' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Cohorts' }))
     expect(screen.getByRole('heading', { name: 'Cohorts and Assignments' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Decks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Deck Studio' }))
     expect(await screen.findByRole('heading', { name: 'Training Deck Studio' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('Template')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Virtual Makeup Path/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Generate preview' }))
     expect(await screen.findByRole('heading', { name: 'Effective Lesson Delivery' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Reporting' }))
     expect(screen.getByRole('heading', { name: 'Supervisor Reporting' })).toBeInTheDocument()
     expect(screen.getByLabelText('Supervisor reporting metrics')).toHaveTextContent('clearance-ready')
+    expect(screen.getByRole('heading', { name: 'Notification queue' })).toBeInTheDocument()
+    expect(screen.getByText('Review needed: Behavior management training')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Content request pipeline' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add content request' })).toBeInTheDocument()
     expect(screen.getByText('Behavior management training not already in the catalog')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Roadmap' }))
     expect(screen.getByRole('heading', { name: 'MVP and Phase 2 Milestones' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Content Library Releases' })).toBeInTheDocument()
+    expect(screen.getByText('Shared Think Together artifact baseline')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Training Deck Studio' })).not.toBeInTheDocument()
   })
 

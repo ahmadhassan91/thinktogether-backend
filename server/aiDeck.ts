@@ -57,6 +57,7 @@ export type ContentStudioDeliveryMode = 'in-person' | 'virtual' | 'hybrid';
 
 export type ContentStudioPackageRequest = {
   provider?: AiDeckProvider;
+  templateId?: string;
   topic: string;
   audience: string;
   durationMinutes: number;
@@ -92,6 +93,12 @@ export type ContentStudioPracticeActivity = {
 export type ContentStudioPackage = {
   provider: AiDeckProvider | 'deterministic';
   model: string;
+  template: {
+    id: string;
+    name: string;
+    requiredOutputs: string[];
+    reviewChecklist: string[];
+  };
   title: string;
   audience: string;
   durationMinutes: number;
@@ -113,7 +120,108 @@ export type ContentStudioPackage = {
   generatedAt: string;
 };
 
+export type ContentStudioTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  bestFor: string;
+  deliveryMode: ContentStudioDeliveryMode;
+  audience: string;
+  durationMinutes: number;
+  topicStarter: string;
+  sourceArtifactIds: string[];
+  requiredOutputs: string[];
+  structure: Array<{
+    label: string;
+    purpose: string;
+  }>;
+  reviewChecklist: string[];
+};
+
 type JsonRecord = Record<string, unknown>;
+
+export const contentStudioTemplates: ContentStudioTemplate[] = [
+  {
+    id: 'core-in-person-training',
+    name: 'Core In-Person Training',
+    description: 'Standard Program Pros session with objectives, practice rounds, facilitator notes, and resource handoff.',
+    bestFor: 'New catalog requests that need a facilitator-led session in the existing Think Together training rhythm.',
+    deliveryMode: 'in-person',
+    audience: 'Think Together program staff and site leaders',
+    durationMinutes: 60,
+    topicStarter: 'Behavior management with PBIS restorative responses',
+    sourceArtifactIds: ['pbis-ppt-master', 'pbis-part-3-template', 'knowledge-check-back-to-school-2025'],
+    requiredOutputs: ['Facilitator deck', 'Knowledge check', 'Practice scenario', 'Learner handout', 'Resource list'],
+    structure: [
+      { label: '2-3 objectives', purpose: 'Name what staff will be able to do by the end.' },
+      { label: 'Source anchor', purpose: 'Connect the request to approved SOP/PBIS artifacts.' },
+      { label: 'Application block', purpose: 'Make participants rehearse the adult language or routine.' },
+      { label: 'Knowledge check', purpose: 'Verify transfer before completion is recorded.' },
+      { label: 'Resource handoff', purpose: 'Give staff a usable takeaway for site implementation.' },
+    ],
+    reviewChecklist: [
+      'Every claim cites an SOP, PBIS deck, or knowledge-check source.',
+      'The session has 2-3 measurable objectives.',
+      'Participants get at least one application/practice opportunity.',
+      'A knowledge check is included before completion.',
+      'Facilitator notes preserve human review before rollout.',
+    ],
+  },
+  {
+    id: 'virtual-makeup-path',
+    name: 'Virtual Makeup Path',
+    description: 'Self-paced or live-virtual alternative for staff who miss in-person induction.',
+    bestFor: 'Missed-session coverage, regional exceptions, or staff who need completion evidence outside the live cohort.',
+    deliveryMode: 'virtual',
+    audience: 'New hires needing makeup completion',
+    durationMinutes: 35,
+    topicStarter: 'Virtual Program Induction makeup training',
+    sourceArtifactIds: ['sop-program-induction', 'pbis-ppt-master', 'knowledge-check-back-to-school-2025'],
+    requiredOutputs: ['Self-paced sequence', 'Final knowledge check', 'Practice reflection', 'Completion receipt', 'Supervisor notice'],
+    structure: [
+      { label: 'Orientation', purpose: 'Explain the missed-session pathway and completion evidence.' },
+      { label: 'Source-grounded lesson', purpose: 'Cover only required induction/PBIS essentials.' },
+      { label: 'Reflection prompt', purpose: 'Ask learners to apply the routine to their site context.' },
+      { label: 'Final check', purpose: 'Confirm understanding before clearance.' },
+      { label: 'Supervisor handoff', purpose: 'Queue follow-up for completion or makeup review.' },
+    ],
+    reviewChecklist: [
+      'Makeup expectations match the induction SOP.',
+      'The pathway clearly states what evidence counts for completion.',
+      'Virtual delivery notes include facilitator or supervisor follow-up.',
+      'Completion language does not bypass Training Ops approval.',
+    ],
+  },
+  {
+    id: 'trainer-template-system',
+    name: 'Reusable Trainer Template',
+    description: 'Reusable template for the 20-person training team so new trainings follow the same instructional spine.',
+    bestFor: 'Standardizing how trainers build new in-person, virtual, or hybrid sessions.',
+    deliveryMode: 'hybrid',
+    audience: 'Think Together training development team',
+    durationMinutes: 45,
+    topicStarter: 'Standardized training template with objectives, application, and resources',
+    sourceArtifactIds: ['sop-program-induction', 'sop-site-lead-onboarding', 'pbis-part-3-template'],
+    requiredOutputs: ['Deck starter', 'Facilitator guide', 'Knowledge-check starter', 'Practice lab', 'Review checklist'],
+    structure: [
+      { label: 'Request brief', purpose: 'Capture audience, problem, delivery mode, and urgency.' },
+      { label: 'Objective frame', purpose: 'Limit scope to 2-3 observable learner outcomes.' },
+      { label: 'Practice design', purpose: 'Pair every concept with an application moment.' },
+      { label: 'Tool/resource section', purpose: 'Package handouts or job aids trainers can reuse.' },
+      { label: 'Review gate', purpose: 'Route content to Training/Marketing before publishing.' },
+    ],
+    reviewChecklist: [
+      'The template works for both in-person and virtual delivery.',
+      'The output includes deck, check, practice, and resource sections.',
+      'Marketing/Training review is explicit before broad use.',
+      'The template reduces trainer drafting time without removing trainer judgment.',
+    ],
+  },
+];
+
+export function getContentStudioTemplates() {
+  return contentStudioTemplates;
+}
 
 export function getAiProviderStatuses(env = process.env): ProviderStatus[] {
   return [
@@ -250,6 +358,7 @@ Rules:
 
 export function buildContentStudioPrompt(request: ContentStudioPackageRequest) {
   const context = contentStudioContext(request);
+  const template = resolveContentStudioTemplate(request.templateId);
   const moduleSummaries = context.modules
     .map((moduleItem) => `- ${moduleItem.title}: ${moduleItem.content.summary} Key points: ${moduleItem.content.keyPoints.join('; ')}`)
     .join('\n');
@@ -260,6 +369,13 @@ Topic: ${request.topic}
 Audience: ${request.audience}
 Duration minutes: ${request.durationMinutes}
 Delivery mode: ${request.deliveryMode}
+Template: ${template.name}
+Template purpose: ${template.description}
+Required outputs: ${template.requiredOutputs.join(', ')}
+Required structure:
+${template.structure.map((section) => `- ${section.label}: ${section.purpose}`).join('\n')}
+Human review checklist:
+${template.reviewChecklist.map((item) => `- ${item}`).join('\n')}
 
 Use only this source-grounded context:
 ${moduleSummaries}
@@ -308,6 +424,12 @@ Required JSON shape:
   "deliveryNotes": {
     "inPerson": ["string"],
     "virtual": ["string"]
+  },
+  "template": {
+    "id": "${template.id}",
+    "name": "${template.name}",
+    "requiredOutputs": ["string"],
+    "reviewChecklist": ["string"]
   }
 }
 
@@ -318,6 +440,8 @@ Rules:
 - Include one application/practice activity suitable for program staff.
 - Include facilitator guide notes and learner handout resources.
 - Include both in-person and virtual delivery notes, even for hybrid delivery.
+- Follow the named template structure and include every required output category.
+- Include the template review checklist so a human reviewer can approve or request changes.
 - Preserve human facilitation; do not imply AI replaces trainers.
 - Use the 10:2 rhythm: brief content, then a practice/application prompt.
 - Return JSON only, no markdown.`;
@@ -622,6 +746,7 @@ function normalizeContentStudioPackage(
   return {
     provider,
     model,
+    template: fallback.template,
     title: getString(payload.title, fallback.title),
     audience: getString(payload.audience, request.audience),
     durationMinutes: Number(payload.durationMinutes || request.durationMinutes),
@@ -656,6 +781,7 @@ function normalizeContentStudioPackage(
 
 function buildDeterministicContentStudioPackage(request: ContentStudioPackageRequest): ContentStudioPackage {
   const context = contentStudioContext(request);
+  const template = resolveContentStudioTemplate(request.templateId);
   const modules = context.modules.slice(0, 5);
   const deckSourceRefs = context.sourceRefs.length ? context.sourceRefs : getLearningPath().sourceRefs;
   const objectives = boundedList(
@@ -707,6 +833,12 @@ function buildDeterministicContentStudioPackage(request: ContentStudioPackageReq
   return {
     provider: 'deterministic',
     model: 'content-studio-fallback-v1',
+    template: {
+      id: template.id,
+      name: template.name,
+      requiredOutputs: template.requiredOutputs,
+      reviewChecklist: template.reviewChecklist,
+    },
     title: request.topic,
     audience: request.audience,
     durationMinutes: request.durationMinutes,
@@ -758,6 +890,10 @@ function buildDeterministicContentStudioPackage(request: ContentStudioPackageReq
   };
 }
 
+function resolveContentStudioTemplate(templateId: string | undefined) {
+  return contentStudioTemplates.find((template) => template.id === templateId) ?? contentStudioTemplates[0];
+}
+
 function normalizeContentStudioDeckSection(value: unknown, fallback: ContentStudioDeckSection): ContentStudioDeckSection {
   const section = asJsonRecord(value);
   return {
@@ -805,7 +941,8 @@ function boundedList(values: string[], min: number, max: number, fallback: strin
 }
 
 function contentStudioContext(request: ContentStudioPackageRequest) {
-  const requestedArtifacts = (request.sourceArtifactIds ?? [])
+  const template = resolveContentStudioTemplate(request.templateId);
+  const requestedArtifacts = ([...template.sourceArtifactIds, ...(request.sourceArtifactIds ?? [])])
     .map((artifactId) => getTrainingSourceArtifact(artifactId))
     .filter((artifact): artifact is SourceArtifact => Boolean(artifact));
   const requestedArtifactNames = new Set(requestedArtifacts.map((artifact) => artifact.artifact));

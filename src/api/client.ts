@@ -293,6 +293,25 @@ export type CompletionNotificationPreview = {
   preview: string
 }
 
+export type NotificationQueueItem = {
+  id: string
+  type: 'learner_invite' | 'completion_digest' | 'coaching_nudge' | 'makeup_review' | 'content_review' | 'content_published'
+  recipientName: string
+  recipientEmail: string
+  subject: string
+  body: string
+  owner: string
+  priority: 'high' | 'medium' | 'low'
+  status: 'draft' | 'queued' | 'sent' | 'dismissed'
+  entityType: string
+  entityId: string
+  metadata: Record<string, unknown>
+  scheduledFor: string | null
+  sentAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type SupervisorReportPayload = {
   generatedAt: string
   groups: {
@@ -306,6 +325,7 @@ export type SupervisorReportPayload = {
   contentDevelopmentRequests: ContentDevelopmentRequest[]
   rolloutForecast: RolloutForecast
   completionNotifications: CompletionNotificationPreview[]
+  notificationQueue: NotificationQueueItem[]
 }
 
 export type AdminLearner = {
@@ -407,6 +427,7 @@ export type ContentStudioDeliveryMode = 'in-person' | 'virtual' | 'hybrid'
 
 export type ContentStudioPackageInput = {
   provider?: AiDeckProvider
+  templateId?: string
   topic: string
   audience: string
   durationMinutes: number
@@ -417,6 +438,12 @@ export type ContentStudioPackageInput = {
 export type ContentStudioPackage = {
   provider: AiDeckProvider | 'deterministic'
   model: string
+  template: {
+    id: string
+    name: string
+    requiredOutputs: string[]
+    reviewChecklist: string[]
+  }
   title: string
   audience: string
   durationMinutes: number
@@ -457,9 +484,42 @@ export type ContentStudioPackage = {
   generatedAt: string
 }
 
+export type ContentStudioTemplate = {
+  id: string
+  name: string
+  description: string
+  bestFor: string
+  deliveryMode: ContentStudioDeliveryMode
+  audience: string
+  durationMinutes: number
+  topicStarter: string
+  sourceArtifactIds: string[]
+  requiredOutputs: string[]
+  structure: Array<{
+    label: string
+    purpose: string
+  }>
+  reviewChecklist: string[]
+}
+
 export type SourceLibraryPayload = {
   sourceLibraryVersion: string
   artifacts: SourceArtifact[]
+  releases?: Array<{
+    id: string
+    version: string
+    title: string
+    status: 'draft' | 'review' | 'approved' | 'published' | 'retired'
+    contentRequestId: string | null
+    artifactIds: string[]
+    sourceMetrics: Record<string, unknown>
+    reviewOwner: string
+    reviewNotes: string
+    createdBy: string | null
+    createdAt: string
+    approvedAt: string | null
+    publishedAt: string | null
+  }>
   learningPaths: Array<{
     id: string
     title: string
@@ -654,6 +714,17 @@ export async function getAdminSupervisorReport() {
   return request<SupervisorReportPayload>('/api/admin/supervisor-report')
 }
 
+export async function getAdminNotifications() {
+  return request<{ notifications: NotificationQueueItem[] }>('/api/admin/notifications')
+}
+
+export async function updateAdminNotificationStatus(id: string, status: NotificationQueueItem['status']) {
+  return request<{ notification: NotificationQueueItem }>(`/api/admin/notifications/${encodeURIComponent(id)}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
 export async function getAutoAssignmentRules() {
   return request<{ rules: AutoAssignmentRule[] }>('/api/admin/assignment-rules')
 }
@@ -792,6 +863,10 @@ export async function createContentStudioPackage(input: ContentStudioPackageInpu
     method: 'POST',
     body: JSON.stringify(input),
   })
+}
+
+export async function getContentStudioTemplates() {
+  return request<{ templates: ContentStudioTemplate[] }>('/api/content-studio/templates')
 }
 
 export async function createContentDevelopmentRequest(input: ContentDevelopmentRequestInput) {

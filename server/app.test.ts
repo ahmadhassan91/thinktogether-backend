@@ -664,6 +664,41 @@ describe.sequential('Think Together training API', () => {
         preview: 'Regional Supervisor A: Maya Rivera completed Program Induction - PBIS',
       }),
     ]);
+    expect(report.body.notificationQueue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'completion_digest',
+          recipientName: 'Regional Supervisor A',
+          recipientEmail: 'regional.supervisor.a@thinktogether.local',
+          subject: 'Maya Rivera completed Program Induction - PBIS',
+          priority: 'medium',
+          status: 'queued',
+          entityType: 'completion_record',
+          entityId: 'learner-1:program-induction-pbis',
+        }),
+      ]),
+    );
+
+    const notifications = await request(handle.app)
+      .get('/api/admin/notifications')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const completionNotification = notifications.body.notifications.find((item: { type: string }) => item.type === 'completion_digest');
+    expect(completionNotification).toMatchObject({
+      recipientEmail: 'regional.supervisor.a@thinktogether.local',
+      status: 'queued',
+    });
+
+    const markedSent = await request(handle.app)
+      .patch(`/api/admin/notifications/${completionNotification.id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'sent' })
+      .expect(200);
+    expect(markedSent.body.notification).toMatchObject({
+      id: completionNotification.id,
+      status: 'sent',
+      sentAt: expect.any(String),
+    });
 
     const digestExport = await request(handle.app)
       .get('/api/admin/exports/supervisor-digest.csv')
@@ -853,7 +888,24 @@ describe.sequential('Think Together training API', () => {
       { id: '006_admin_audit', name: 'Admin audit event trail' },
       { id: '007_content_development_requests', name: 'Phase 2 content development requests' },
       { id: '008_auto_assignment_rules', name: 'Phase 2 auto-assignment rules' },
+      { id: '009_notification_queue', name: 'Phase 2 notification queue' },
+      { id: '010_content_library_versions', name: 'Phase 2 content library versioning' },
     ]);
+
+    const sourceLibrary = await request(handle.app)
+      .get('/api/source-library')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(sourceLibrary.body.releases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'source-library-current',
+          version: 'think-training-source-library-2026-05-13',
+          status: 'published',
+          reviewOwner: 'Program Training & Development',
+        }),
+      ]),
+    );
 
     const clearanceExport = await request(handle.app)
       .get('/api/admin/exports/clearance.csv')
@@ -944,6 +996,81 @@ describe.sequential('Think Together training API', () => {
           id: created.body.request.id,
           status: 'review-needed',
           outputs: ['Self-paced module', 'Knowledge check', 'Completion report'],
+        }),
+      ]),
+    );
+    expect(report.body.notificationQueue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'content_review',
+          recipientName: 'Training Ops',
+          subject: 'Review needed: Rapid virtual makeup training for missed PBIS sessions',
+          priority: 'high',
+          status: 'queued',
+          entityType: 'content_request',
+          entityId: created.body.request.id,
+        }),
+      ]),
+    );
+
+    const notifications = await request(handle.app)
+      .get('/api/admin/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(notifications.body.notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'content_review',
+          status: 'queued',
+          entityId: created.body.request.id,
+        }),
+      ]),
+    );
+
+    await request(handle.app)
+      .patch(`/api/admin/content-requests/${created.body.request.id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'approved', reviewNotes: 'Approved for a virtual pilot.' })
+      .expect(200);
+
+    const published = await request(handle.app)
+      .patch(`/api/admin/content-requests/${created.body.request.id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'published', reviewNotes: 'Published for supervisor rollout.' })
+      .expect(200);
+    expect(published.body.request).toMatchObject({
+      id: created.body.request.id,
+      status: 'published',
+      publishedAt: expect.any(String),
+    });
+
+    const refreshedSourceLibrary = await request(handle.app)
+      .get('/api/source-library')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(refreshedSourceLibrary.body.releases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: `content-request-${created.body.request.id}`,
+          title: 'Rapid virtual makeup training for missed PBIS sessions',
+          status: 'published',
+          contentRequestId: created.body.request.id,
+          artifactIds: ['SOP_Program Induction.pdf', 'PBIS PPT Master.pptx'],
+          reviewOwner: 'Training Ops',
+        }),
+      ]),
+    );
+
+    const publishedNotifications = await request(handle.app)
+      .get('/api/admin/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(publishedNotifications.body.notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'content_published',
+          status: 'queued',
+          entityId: created.body.request.id,
         }),
       ]),
     );
@@ -1191,6 +1318,10 @@ describe.sequential('Think Together training API', () => {
         expect.objectContaining({
           provider: 'deterministic',
           model: 'content-studio-fallback-v1',
+          template: expect.objectContaining({
+            id: 'core-in-person-training',
+            name: 'Core In-Person Training',
+          }),
           title: 'PBIS practice lab for program leaders',
           audience: 'Program leaders',
           durationMinutes: 60,
@@ -1234,6 +1365,30 @@ describe.sequential('Think Together training API', () => {
     }
   });
 
+  it('lists reusable Content Studio templates for admins', async () => {
+    handle = await boot();
+    const token = await loginToken(handle);
+
+    const response = await request(handle.app)
+      .get('/api/content-studio/templates')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.templates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'core-in-person-training',
+          name: 'Core In-Person Training',
+          requiredOutputs: expect.arrayContaining(['Facilitator deck']),
+        }),
+        expect.objectContaining({
+          id: 'virtual-makeup-path',
+          deliveryMode: 'virtual',
+        }),
+      ]),
+    );
+  });
+
   it('falls back to a deterministic Content Studio package when the configured AI provider fails', async () => {
     handle = await boot();
     const token = await loginToken(handle);
@@ -1261,6 +1416,9 @@ describe.sequential('Think Together training API', () => {
         expect.objectContaining({
           provider: 'deterministic',
           model: 'content-studio-fallback-v1',
+          template: expect.objectContaining({
+            id: 'core-in-person-training',
+          }),
           title: 'Behavior management with PBIS restorative responses',
           audience: 'Think Together program staff and site leaders',
         }),

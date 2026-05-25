@@ -8,6 +8,7 @@ import { scoreScenarioResponse } from '../src/features/coach/coachEngine';
 import {
   generateContentStudioPackage,
   generateDeckOutline,
+  getContentStudioTemplates,
   getAiProviderStatuses,
   type DeckOutline,
 } from './aiDeck';
@@ -132,6 +133,7 @@ const aiDeckOutlineSchema = z.object({
 
 const contentStudioPackageSchema = z.object({
   provider: z.enum(['gemini', 'openai', 'claude']).optional(),
+  templateId: z.string().trim().min(1).optional(),
   topic: z.string().trim().min(8).max(180),
   audience: z.string().trim().min(3).max(120).default('Think Together program staff'),
   durationMinutes: z.coerce.number().int().min(15).max(240).default(60),
@@ -154,6 +156,10 @@ const adminContentRequestSchema = z.object({
 const adminContentRequestStatusSchema = z.object({
   status: contentRequestStatusSchema,
   reviewNotes: z.string().trim().max(1200).default(''),
+});
+
+const notificationStatusSchema = z.object({
+  status: z.enum(['draft', 'queued', 'sent', 'dismissed']),
 });
 
 const sourceSearchSchema = z.object({
@@ -301,10 +307,11 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     return res.json(content);
   });
 
-  app.get('/api/source-library', authenticate, (_req, res) => {
+  app.get('/api/source-library', authenticate, async (_req, res) => {
     res.json({
       sourceLibraryVersion: SOURCE_LIBRARY_VERSION,
       artifacts: trainingSourceLibrary,
+      releases: await readContentLibraryVersions(db),
       learningPaths: trainingLearningPaths.map((path) => ({
         id: path.id,
         title: path.title,
@@ -374,6 +381,9 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     );
 
     const completionRecord = await upsertCompletionRecordIfReady(db, req.user, moduleRow.path_id, completedAt);
+    if (completionRecord?.learnerId) {
+      await enqueueCompletionNotification(db, completionRecord.learnerId, moduleRow.path_id);
+    }
 
     res.json({ moduleId: payload.moduleId, status: 'completed', completedAt, completionRecord });
   });
@@ -525,6 +535,35 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     res.json(await readSupervisorReport(db));
   });
 
+  app.get('/api/admin/notifications', authenticate, requireAdmin, async (_req, res) => {
+    res.json({ notifications: await readNotificationQueue(db) });
+  });
+
+  app.patch('/api/admin/notifications/:notificationId/status', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = notificationStatusSchema.parse(req.body);
+    const now = new Date().toISOString();
+    const result = await db.query(
+      `UPDATE notification_queue
+       SET status = $2,
+           sent_at = CASE WHEN $2 = 'sent' THEN $3::timestamptz ELSE sent_at END,
+           updated_at = $3
+       WHERE id = $1
+       RETURNING *`,
+      [String(req.params.notificationId), payload.status, now],
+    );
+    const row = result.rows[0] as NotificationQueueRow | undefined;
+    if (!row) return res.status(404).json({ error: 'Notification not found' });
+
+    await recordAuditEvent(db, req.user, 'notification.status_updated', 'notification', row.id, {
+      status: payload.status,
+      type: row.type,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+    });
+
+    res.json({ notification: mapNotificationQueueItem(row) });
+  });
+
   app.get('/api/admin/assignment-rules', authenticate, requireAdmin, async (_req, res) => {
     res.json({ rules: await readAutoAssignmentRules(db) });
   });
@@ -624,6 +663,10 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
       status: payload.status,
       reviewNotes: payload.reviewNotes,
     });
+    if (row.status === 'approved' || row.status === 'published') {
+      await syncContentLibraryVersionForRequest(db, row, req.user);
+    }
+    await enqueueContentRequestNotification(db, row, req.user);
 
     res.json({ request: mapContentDevelopmentRequest(row) });
   });
@@ -903,6 +946,10 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
 
   app.get('/api/ai/providers', authenticate, requireAdmin, async (_req, res) => {
     res.json({ providers: getAiProviderStatuses() });
+  });
+
+  app.get('/api/content-studio/templates', authenticate, requireAdmin, async (_req, res) => {
+    res.json({ templates: getContentStudioTemplates() });
   });
 
   app.post('/api/content-studio/packages', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
@@ -1446,6 +1493,7 @@ async function readSupervisorReport(db: AppDatabase) {
 
   const learners = (result.rows as SupervisorReportRow[]).map(mapSupervisorReportLearner);
   const contentDevelopmentRequests = await readContentDevelopmentRequests(db);
+  const notificationQueue = await readNotificationQueue(db);
   return {
     generatedAt: new Date().toISOString(),
     groups: {
@@ -1457,6 +1505,7 @@ async function readSupervisorReport(db: AppDatabase) {
     assignmentAutomation: await buildAssignmentAutomationPreview(db, learners),
     integrationReadiness: buildIntegrationReadiness(learners),
     contentDevelopmentRequests,
+    notificationQueue,
     rolloutForecast: buildRolloutForecast(learners),
     completionNotifications: buildCompletionNotificationPreviews(learners),
   };
@@ -1833,6 +1882,246 @@ function mapContentDevelopmentRequest(row: ContentDevelopmentRequestRow) {
     approvedAt: row.approved_at?.toISOString() ?? null,
     publishedAt: row.published_at?.toISOString() ?? null,
   };
+}
+
+async function readContentLibraryVersions(db: AppDatabase) {
+  const result = await db.query(
+    `SELECT *
+     FROM content_library_versions
+     ORDER BY
+       CASE status
+        WHEN 'published' THEN 0
+        WHEN 'approved' THEN 1
+        WHEN 'review' THEN 2
+        WHEN 'draft' THEN 3
+        ELSE 4
+       END,
+       COALESCE(published_at, approved_at, created_at) DESC`,
+  );
+  return (result.rows as ContentLibraryVersionRow[]).map(mapContentLibraryVersion);
+}
+
+function mapContentLibraryVersion(row: ContentLibraryVersionRow) {
+  return {
+    id: row.id,
+    version: row.version,
+    title: row.title,
+    status: row.status,
+    contentRequestId: row.content_request_id,
+    artifactIds: row.artifact_ids,
+    sourceMetrics: row.source_metrics,
+    reviewOwner: row.review_owner,
+    reviewNotes: row.review_notes,
+    createdBy: row.created_by,
+    createdAt: row.created_at.toISOString(),
+    approvedAt: row.approved_at?.toISOString() ?? null,
+    publishedAt: row.published_at?.toISOString() ?? null,
+  };
+}
+
+async function syncContentLibraryVersionForRequest(db: AppDatabase, row: ContentDevelopmentRequestRow, actor: User | undefined) {
+  const status = row.status === 'published' ? 'published' : 'approved';
+  const version = `${SOURCE_LIBRARY_VERSION}-${row.id}`;
+  await db.query(
+    `INSERT INTO content_library_versions
+       (id, version, title, status, content_request_id, artifact_ids, source_metrics,
+        review_owner, review_notes, created_by, created_at, approved_at, published_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+             CASE WHEN $4 IN ('approved', 'published') THEN $11::timestamptz ELSE NULL END,
+             CASE WHEN $4 = 'published' THEN $11::timestamptz ELSE NULL END)
+     ON CONFLICT (id) DO UPDATE SET
+       status = EXCLUDED.status,
+       artifact_ids = EXCLUDED.artifact_ids,
+       source_metrics = EXCLUDED.source_metrics,
+       review_owner = EXCLUDED.review_owner,
+       review_notes = EXCLUDED.review_notes,
+       approved_at = COALESCE(content_library_versions.approved_at, EXCLUDED.approved_at),
+       published_at = CASE WHEN EXCLUDED.status = 'published' THEN EXCLUDED.published_at ELSE content_library_versions.published_at END`,
+    [
+      `content-request-${row.id}`,
+      version,
+      row.request,
+      status,
+      row.id,
+      JSON.stringify(row.artifacts_needed),
+      JSON.stringify({
+        outputs: row.outputs.length,
+        artifacts: row.artifacts_needed.length,
+        deliveryMode: row.delivery_mode,
+        sourceLibraryVersion: SOURCE_LIBRARY_VERSION,
+      }),
+      row.review_owner,
+      row.review_notes || contentRequestNextLibraryNote(row.status),
+      actor?.id ?? null,
+      row.updated_at.toISOString(),
+    ],
+  );
+}
+
+function contentRequestNextLibraryNote(status: ContentDevelopmentRequestRow['status']) {
+  if (status === 'published') return 'Published after human review; ready for rollout planning and assignment mapping.';
+  if (status === 'approved') return 'Approved by reviewer; waiting for publish decision before broad rollout.';
+  return 'Content library version pending review.';
+}
+
+async function readNotificationQueue(db: AppDatabase) {
+  const result = await db.query(
+    `SELECT *
+     FROM notification_queue
+     ORDER BY
+       CASE status
+        WHEN 'queued' THEN 0
+        WHEN 'draft' THEN 1
+        WHEN 'sent' THEN 2
+        ELSE 3
+       END,
+       CASE priority
+        WHEN 'high' THEN 0
+        WHEN 'medium' THEN 1
+        ELSE 2
+       END,
+       updated_at DESC`,
+  );
+  return (result.rows as NotificationQueueRow[]).map(mapNotificationQueueItem);
+}
+
+function mapNotificationQueueItem(row: NotificationQueueRow) {
+  return {
+    id: row.id,
+    type: row.type,
+    recipientName: row.recipient_name,
+    recipientEmail: row.recipient_email,
+    subject: row.subject,
+    body: row.body,
+    owner: row.owner,
+    priority: row.priority,
+    status: row.status,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    metadata: row.metadata,
+    scheduledFor: row.scheduled_for?.toISOString() ?? null,
+    sentAt: row.sent_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+async function enqueueCompletionNotification(db: AppDatabase, learnerId: string, pathId: string) {
+  const result = await db.query(
+    `SELECT l.id AS learner_id, l.first_name, l.last_name, l.email, l.supervisor,
+            c.id AS cohort_id, c.name AS cohort_name, c.facilitator_ids,
+            lp.id AS path_id, lp.title AS path_title,
+            cr.score, cr.confirmation_code, cr.completed_at, cr.exported_to_lms
+     FROM learners l
+     JOIN cohorts c ON c.id = l.cohort_id
+     JOIN learning_paths lp ON lp.id = $2
+     JOIN completion_records cr ON cr.learner_id = l.id AND cr.path_id = lp.id
+     WHERE l.id = $1`,
+    [learnerId, pathId],
+  );
+  const row = result.rows[0] as CompletionNotificationSourceRow | undefined;
+  if (!row) return;
+
+  const learnerName = `${row.first_name} ${row.last_name}`;
+  const recipientName = row.supervisor || row.facilitator_ids[0] || 'Training Ops';
+  const recipientEmail = notificationRecipientEmail(recipientName);
+  const now = new Date().toISOString();
+
+  await db.query(
+    `INSERT INTO notification_queue
+       (id, type, recipient_name, recipient_email, subject, body, owner, priority, status,
+        entity_type, entity_id, metadata, scheduled_for, created_at, updated_at)
+     VALUES ($1, 'completion_digest', $2, $3, $4, $5, $6, 'medium', 'queued',
+             'completion_record', $7, $8, $9, $9, $9)
+     ON CONFLICT (type, entity_type, entity_id, recipient_email)
+     DO UPDATE SET
+       subject = EXCLUDED.subject,
+       body = EXCLUDED.body,
+       owner = EXCLUDED.owner,
+       priority = EXCLUDED.priority,
+       status = CASE WHEN notification_queue.status = 'sent' THEN notification_queue.status ELSE EXCLUDED.status END,
+       metadata = EXCLUDED.metadata,
+       updated_at = EXCLUDED.updated_at
+     RETURNING *`,
+    [
+      randomUUID(),
+      recipientName,
+      recipientEmail,
+      `${learnerName} completed ${row.path_title}`,
+      `${learnerName} completed ${row.path_title} for ${row.cohort_name} with score ${row.score}%. Confirmation: ${row.confirmation_code}. Review LMS export status and supervisor follow-up.`,
+      recipientName,
+      `${row.learner_id}:${row.path_id}`,
+      JSON.stringify({
+        learnerId: row.learner_id,
+        learnerName,
+        learnerEmail: row.email,
+        cohortId: row.cohort_id,
+        cohortName: row.cohort_name,
+        pathId: row.path_id,
+        score: row.score,
+        confirmationCode: row.confirmation_code,
+        completedAt: row.completed_at?.toISOString() ?? null,
+        exportedToLms: row.exported_to_lms,
+      }),
+      now,
+    ],
+  );
+}
+
+async function enqueueContentRequestNotification(db: AppDatabase, row: ContentDevelopmentRequestRow, actor: User | undefined) {
+  if (row.status !== 'review-needed' && row.status !== 'published') return;
+
+  const type = row.status === 'published' ? 'content_published' : 'content_review';
+  const subject = row.status === 'published'
+    ? `Published training package: ${row.request}`
+    : `Review needed: ${row.request}`;
+  const body = row.status === 'published'
+    ? `${row.request} is published for ${row.audience}. Outputs: ${row.outputs.join(', ')}. Confirm assignment and reporting plan before broad rollout.`
+    : `${row.request} needs human review by ${row.review_owner}. Delivery: ${row.delivery_mode}. Outputs: ${row.outputs.join(', ')}. Notes: ${row.review_notes || 'No notes provided.'}`;
+  const now = new Date().toISOString();
+
+  await db.query(
+    `INSERT INTO notification_queue
+       (id, type, recipient_name, recipient_email, subject, body, owner, priority, status,
+        entity_type, entity_id, metadata, scheduled_for, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $3, $7, 'queued',
+             'content_request', $8, $9, $10, $10, $10)
+     ON CONFLICT (type, entity_type, entity_id, recipient_email)
+     DO UPDATE SET
+       subject = EXCLUDED.subject,
+       body = EXCLUDED.body,
+       priority = EXCLUDED.priority,
+       status = CASE WHEN notification_queue.status = 'sent' THEN notification_queue.status ELSE EXCLUDED.status END,
+       metadata = EXCLUDED.metadata,
+       updated_at = EXCLUDED.updated_at`,
+    [
+      randomUUID(),
+      type,
+      row.review_owner,
+      notificationRecipientEmail(row.review_owner),
+      subject,
+      body,
+      row.status === 'published' ? 'medium' : 'high',
+      row.id,
+      JSON.stringify({
+        requestId: row.id,
+        request: row.request,
+        audience: row.audience,
+        deliveryMode: row.delivery_mode,
+        status: row.status,
+        outputs: row.outputs,
+        artifactsNeeded: row.artifacts_needed,
+        reviewNotes: row.review_notes,
+        actorEmail: actor?.email ?? null,
+      }),
+      now,
+    ],
+  );
+}
+
+function notificationRecipientEmail(name: string) {
+  const normalized = name && name !== 'Unassigned' ? slugify(name).replaceAll('-', '.') : 'training.ops';
+  return `${normalized}@thinktogether.local`;
 }
 
 function buildIntegrationReadiness(learners: SupervisorReportLearner[]) {
@@ -2577,6 +2866,58 @@ type ContentDevelopmentRequestRow = {
   updated_at: Date;
   approved_at: Date | null;
   published_at: Date | null;
+};
+
+type NotificationQueueRow = {
+  id: string;
+  type: 'learner_invite' | 'completion_digest' | 'coaching_nudge' | 'makeup_review' | 'content_review' | 'content_published';
+  recipient_name: string;
+  recipient_email: string;
+  subject: string;
+  body: string;
+  owner: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'draft' | 'queued' | 'sent' | 'dismissed';
+  entity_type: string;
+  entity_id: string;
+  metadata: Record<string, unknown>;
+  scheduled_for: Date | null;
+  sent_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type ContentLibraryVersionRow = {
+  id: string;
+  version: string;
+  title: string;
+  status: 'draft' | 'review' | 'approved' | 'published' | 'retired';
+  content_request_id: string | null;
+  artifact_ids: string[];
+  source_metrics: Record<string, unknown>;
+  review_owner: string;
+  review_notes: string;
+  created_by: string | null;
+  created_at: Date;
+  approved_at: Date | null;
+  published_at: Date | null;
+};
+
+type CompletionNotificationSourceRow = {
+  learner_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  supervisor: string | null;
+  cohort_id: string;
+  cohort_name: string;
+  facilitator_ids: string[];
+  path_id: string;
+  path_title: string;
+  score: number;
+  confirmation_code: string;
+  completed_at: Date | null;
+  exported_to_lms: boolean;
 };
 
 type CompletionRecordRow = {

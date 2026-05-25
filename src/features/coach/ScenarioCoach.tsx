@@ -92,30 +92,42 @@ export const ScenarioCoach = ({ scenario, scenarios = [scenario], onSelectScenar
         </aside>
       ) : null}
 
-      <form onSubmit={handleSubmit}>
-        <label htmlFor={`response-${scenario.id}`}>Response</label>
+      <form className="scenario-coach__response" onSubmit={handleSubmit}>
+        <div>
+          <label htmlFor={`response-${scenario.id}`}>Your coaching response</label>
+          <p>Write what you would say or do in the moment. The coach checks for observable language, PBIS alignment, and least-intensive support.</p>
+        </div>
         <textarea
           id={`response-${scenario.id}`}
+          placeholder="Example: I would restate the expected routine, model the exact words/actions, then give the student a quick chance to practice it before moving on."
           value={response}
           onChange={(event) => setResponse(event.target.value)}
           rows={6}
         />
         <button type="submit" disabled={!response.trim() || submitting}>
-          {submitting ? "Submitting" : "Submit"}
+          {submitting ? (
+            <>
+              <span className="tt-spinner" aria-hidden="true" />
+              Submitting...
+            </>
+          ) : (
+            "Submit"
+          )}
         </button>
       </form>
 
       {error ? <p role="alert">{error}</p> : null}
 
       {feedback ? (
-        <section aria-label="Feedback rubric">
-          <h3>Feedback rubric</h3>
-          <p>
-            {feedback.score}/4 {feedback.label}
-          </p>
+        <section className="scenario-coach__feedback" aria-label="Feedback rubric">
+          <div>
+            <p className="scenario-coach__eyebrow">Coach feedback</p>
+            <h3>Feedback rubric</h3>
+          </div>
+          <strong>{feedback.score}/4 · {feedback.label}</strong>
           <p>{feedback.rationale}</p>
           <p>{feedback.coachingNote}</p>
-          <p>{feedback.confidence}</p>
+          <small>{feedback.confidence}</small>
           <ul>
             {feedback.sourceBasis.map((source) => (
               <li key={source}>{source}</li>
