@@ -359,6 +359,7 @@ export type AdminLearner = {
   cohortId: string
   cohortName: string
   region: string
+  supervisor?: string
   assignedPathIds: string[]
   inviteStatus?: InviteStatus
 }
@@ -368,6 +369,7 @@ export type AdminLearnerInput = {
   lastName: string
   email: string
   cohortId?: string
+  supervisor?: string
   assignedPathIds: string[]
 }
 

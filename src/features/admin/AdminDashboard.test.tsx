@@ -194,6 +194,7 @@ describe('AdminDashboard', () => {
     fireEvent.change(screen.getByLabelText('Learner last name'), { target: { value: 'Kim' } })
     fireEvent.change(screen.getByLabelText('Learner email'), { target: { value: 'noah@example.org' } })
     fireEvent.change(screen.getByLabelText('Learner cohort'), { target: { value: 'cohort-1' } })
+    fireEvent.change(screen.getByLabelText('Learner supervisor'), { target: { value: 'Regional Supervisor A' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add learner' }))
 
     expect(onCreateLearner).toHaveBeenCalledWith({
@@ -201,6 +202,7 @@ describe('AdminDashboard', () => {
       lastName: 'Kim',
       email: 'noah@example.org',
       cohortId: 'cohort-1',
+      supervisor: 'Regional Supervisor A',
       assignedPathIds: ['program-induction-pbis'],
     })
 

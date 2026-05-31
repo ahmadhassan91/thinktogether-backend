@@ -113,6 +113,7 @@ const adminCreateLearnerSchema = z.object({
   lastName: z.string().trim().min(1).max(80),
   email: z.string().trim().email(),
   cohortId: z.string().trim().min(1),
+  supervisor: z.string().trim().max(160).optional().default(''),
   assignedPathIds: z.array(z.string().trim().min(1)).min(1),
 });
 
@@ -817,14 +818,15 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     const id = randomUUID();
     await db.transaction(async (client) => {
       await client.query(
-        `INSERT INTO learners (id, first_name, last_name, email, cohort_id, assigned_path_ids)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO learners (id, first_name, last_name, email, cohort_id, supervisor, assigned_path_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           id,
           payload.firstName,
           payload.lastName,
           payload.email.toLowerCase(),
           payload.cohortId,
+          payload.supervisor || null,
           JSON.stringify(payload.assignedPathIds),
         ],
       );
@@ -840,6 +842,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
     await recordAuditEvent(db, req.user, 'learner.created', 'learner', id, {
       email: payload.email.toLowerCase(),
       cohortId: payload.cohortId,
+      supervisor: payload.supervisor || null,
       assignedPathIds: payload.assignedPathIds,
     });
 
@@ -852,6 +855,7 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
         cohortId: payload.cohortId,
         cohortName: cohort.name,
         region: cohort.region,
+        supervisor: payload.supervisor || '',
         assignedPathIds: payload.assignedPathIds,
       },
     });
@@ -2895,7 +2899,7 @@ function sendCsv(res: Response, filename: string, rows: Array<Record<string, unk
 }
 
 function adminLearnersQuery() {
-  return `SELECT l.id, l.first_name, l.last_name, l.email, l.cohort_id, l.assigned_path_ids,
+  return `SELECT l.id, l.first_name, l.last_name, l.email, l.cohort_id, l.supervisor, l.assigned_path_ids,
                  c.name AS cohort_name, c.region,
                  CASE
                    WHEN accepted_invite.id IS NOT NULL THEN 'accepted'
@@ -2956,6 +2960,7 @@ function mapAdminLearner(row: AdminLearnerRow) {
     cohortId: row.cohort_id,
     cohortName: row.cohort_name,
     region: row.region,
+    supervisor: row.supervisor ?? '',
     assignedPathIds: row.assigned_path_ids,
     inviteStatus: row.invite_status,
   };
@@ -2979,6 +2984,7 @@ type AdminLearnerRow = {
   last_name: string;
   email: string;
   cohort_id: string;
+  supervisor: string | null;
   assigned_path_ids: string[];
   cohort_name: string;
   region: string;

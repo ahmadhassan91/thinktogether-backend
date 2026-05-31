@@ -1509,6 +1509,53 @@ select option {
   font-size: 0.82rem;
 }
 
+.reporting-view__impact,
+.curriculum-command-center,
+.curriculum-workflow,
+.assistant-prompts {
+  margin-bottom: 1rem;
+}
+
+.reporting-view__impact {
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  background: linear-gradient(135deg, rgba(72, 192, 176, 0.1), rgba(255, 249, 239, 0.9));
+  padding: 1rem;
+}
+
+.reporting-view__impact-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.reporting-view__impact-grid article {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid rgba(26, 138, 128, 0.18);
+  border-radius: var(--tt-radius-sm);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 0.85rem;
+}
+
+.reporting-view__impact-grid small,
+.curriculum-command-center__stats small {
+  color: var(--tt-muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reporting-view__impact-grid strong {
+  color: var(--tt-dark);
+  font-size: 1.35rem;
+}
+
+.reporting-view__impact-grid p,
+.curriculum-command-center p {
+  margin: 0;
+  color: var(--tt-muted);
+}
+
 .readiness-list,
 .content-request-list {
   display: grid;
@@ -2445,6 +2492,8 @@ select option {
 
 @media (max-width: 47.99rem) {
   .app-shell--workspace {
+    display: block;
+    overflow-x: hidden;
     padding-top: 4.15rem;
   }
 
@@ -2527,13 +2576,26 @@ select option {
     border-right: 1px solid var(--tt-line);
     border-bottom: 0;
     box-shadow: 0.65rem 0 2rem rgba(31, 36, 42, 0.14);
-    transform: translateX(-105%);
-    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-110%);
+    visibility: hidden;
+    transition:
+      opacity 220ms ease,
+      transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0s linear 300ms;
     padding: 0.75rem;
   }
 
   .app-shell--workspace[data-nav-open='true'] .app-sidebar {
+    opacity: 1;
+    pointer-events: auto;
     transform: translateX(0);
+    visibility: visible;
+    transition:
+      opacity 180ms ease,
+      transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0s;
   }
 
   .app-sidebar__brand {
@@ -2889,6 +2951,77 @@ select option {
 }
 
 /* Curriculum Studio Sub-tabs */
+.curriculum-command-center {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.2fr) minmax(18rem, 0.8fr);
+  border: 1px solid rgba(72, 192, 176, 0.24);
+  border-radius: var(--tt-radius);
+  background: #fffdf8;
+  padding: 1rem;
+}
+
+.curriculum-command-center h2 {
+  margin: 0;
+  color: var(--tt-dark);
+  font-size: clamp(1.2rem, 2vw, 1.65rem);
+}
+
+.curriculum-command-center__stats {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.curriculum-command-center__stats span {
+  display: grid;
+  gap: 0.12rem;
+  border-left: 0.22rem solid var(--tt-teal);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-soft-teal);
+  color: var(--tt-teal-dark);
+  font-weight: 850;
+  padding: 0.7rem;
+}
+
+.curriculum-command-center__stats strong {
+  color: var(--tt-dark);
+  font-size: 1.55rem;
+}
+
+.curriculum-workflow {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.curriculum-workflow li {
+  display: grid;
+  gap: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-white);
+  padding: 0.85rem;
+}
+
+.curriculum-workflow li[data-active='true'] {
+  border-color: rgba(245, 80, 35, 0.35);
+  background: #fff7ed;
+}
+
+.curriculum-workflow strong {
+  color: var(--tt-dark);
+}
+
+.curriculum-workflow span {
+  color: var(--tt-muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .curriculum-tabs {
   display: flex;
   gap: 0.5rem;
@@ -2916,4 +3049,46 @@ select option {
 .curriculum-tabs__button[data-active='true'] {
   color: var(--tt-orange);
   border-bottom-color: var(--tt-orange);
+}
+
+.assistant-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.assistant-prompts .button-secondary {
+  min-height: 2rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.assistant-answer__summary,
+.assistant-answer__sources {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.assistant-answer__summary h2,
+.assistant-answer__sources h2 {
+  margin: 0;
+  color: var(--tt-dark);
+  font-size: 1rem;
+}
+
+.assistant-answer__summary ol {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--tt-muted);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+@media (max-width: 56rem) {
+  .curriculum-command-center,
+  .curriculum-workflow {
+    grid-template-columns: 1fr;
+  }
 }

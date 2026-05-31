@@ -63,6 +63,7 @@ const emptyLearnerForm: AdminLearnerInput = {
   lastName: '',
   email: '',
   cohortId: '',
+  supervisor: '',
   assignedPathIds: ['program-induction-pbis'],
 }
 
@@ -596,7 +597,7 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
           </h2>
           <p style={{ color: '#657184', margin: '-0.35rem 0 0.9rem', maxWidth: 760 }}>
             {showUsers
-              ? 'Create learner records, connect them to a cohort, then generate invite links when the roster is ready.'
+              ? 'Create learner records, connect them to a cohort and supervisor, then generate invite links when the roster is ready.'
               : 'Set the session name, region, primary facilitator, learning path, and start time without needing to paste raw system IDs.'}
           </p>
 
@@ -662,7 +663,7 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
               <form aria-label="Create learner" onSubmit={handleLearnerSubmit}>
                 <h3 style={{ fontSize: '1rem', margin: '0 0 0.75rem' }}>Add learner</h3>
                 <p style={{ color: '#657184', fontSize: '0.9rem', margin: '-0.35rem 0 0.75rem' }}>
-                  Cohort can stay unassigned during intake; assignment risks are flagged in the managed learner table.
+                  Manual entry supports a supervisor name for reporting. At scale, the supervisor comes from the HR/ADP roster import.
                 </p>
                 <div style={{ display: 'grid', gap: '0.65rem' }}>
                   <label>
@@ -711,6 +712,16 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label>
+                    Supervisor
+                    <input
+                      aria-label="Learner supervisor"
+                      onChange={(event) => setLearnerForm({ ...learnerForm, supervisor: event.target.value })}
+                      placeholder="Regional Supervisor A"
+                      style={{ display: 'block', marginTop: '0.25rem', width: '100%' }}
+                      value={learnerForm.supervisor ?? ''}
+                    />
                   </label>
                   <button type="submit">Add learner</button>
                 </div>
@@ -901,7 +912,7 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
                   <tr>
-                    {['Learner', 'Email', 'Cohort', 'Region', 'Invite', 'Action'].map((heading) => (
+                    {['Learner', 'Email', 'Cohort', 'Supervisor', 'Region', 'Invite', 'Action'].map((heading) => (
                       <th key={heading} style={{ borderBottom: '1px solid #cbd5e1', padding: '0.6rem' }}>
                         {heading}
                       </th>
@@ -921,6 +932,9 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
                         <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{learner.email}</td>
                         <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
                           {learner.cohortName || <span style={{ color: '#9a3412', fontWeight: 700 }}>Missing cohort</span>}
+                        </td>
+                        <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
+                          {learner.supervisor || <span style={{ color: '#9a3412', fontWeight: 700 }}>Missing supervisor</span>}
                         </td>
                         <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>{learner.region || 'Unassigned'}</td>
                         <td style={{ borderBottom: '1px solid #e5e7eb', padding: '0.6rem' }}>
@@ -976,6 +990,27 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
               <p style={{ color: '#657184', margin: '0 0 1rem' }}>
                 Paste the latest ADP/HR CSV below to dry-run path assignment rules, supervisor group binding, and record missing site indicators.
               </p>
+              <div
+                aria-label="Supervisor assignment explanation"
+                style={{
+                  background: '#f0fdfa',
+                  border: '1px solid #99f6e4',
+                  borderRadius: 8,
+                  display: 'grid',
+                  gap: '0.35rem',
+                  marginBottom: '1rem',
+                  padding: '0.85rem',
+                }}
+              >
+                <strong>How supervisor assignment works</strong>
+                <span style={{ color: '#475569' }}>
+                  The imported <b>Supervisor</b> column is saved with each learner and becomes the grouping key in Supervisor Center,
+                  completion digest exports, coaching nudges, and make-up review queues.
+                </span>
+                <small style={{ color: '#0f766e', fontWeight: 700 }}>
+                  Phase 2 production path: map this field directly from HR/ADP, then route blanks to facilitator or Training Ops.
+                </small>
+              </div>
               
               <label style={{ display: 'block', margin: '1rem 0' }}>
                 <span style={{ fontWeight: 600 }}>Paste weekly HR/ADP roster CSV</span>
@@ -1087,6 +1122,7 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
                       </p>
                       <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
                         <div><strong>Auto assigns:</strong> {formatLearningPathId(rule.pathIds[0] || '')}</div>
+                        <div style={{ marginTop: '0.25rem' }}><strong>Supervisor source:</strong> HR/ADP Supervisor column; fallback to facilitator/Training Ops if blank.</div>
                         <div style={{ marginTop: '0.25rem' }}><strong>Evaluation Priority:</strong> {rule.priority}</div>
                       </div>
                     </div>

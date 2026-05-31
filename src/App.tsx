@@ -843,6 +843,31 @@ function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: bool
   const drilldownGroups = [...supervisorGroups, ...facilitatorGroups, ...cohortGroups]
   const selectedGroup = drilldownGroups.find((group) => group.id === selectedGroupId) ?? drilldownGroups[0]
   const actionQueue = supervisorReport?.actionQueue ?? []
+  const rolloutForecast = supervisorReport?.rolloutForecast
+  const notificationQueue = supervisorReport?.notificationQueue ?? []
+  const integrationReadiness = supervisorReport?.integrationReadiness ?? []
+  const supervisorImpactCards = [
+    {
+      label: 'Supervisor visibility',
+      value: `${drilldownGroups.length} groups`,
+      body: 'Review learner progress, scores, and next actions by supervisor, facilitator, or cohort.',
+    },
+    {
+      label: 'Completion follow-up',
+      value: `${notificationQueue.length} notices`,
+      body: 'Queue completion, coaching, and make-up notifications instead of manually chasing status.',
+    },
+    {
+      label: 'Weekly hiring scale',
+      value: rolloutForecast ? `${rolloutForecast.weeklyNewHires} hires/wk` : 'Ready',
+      body: 'Preview auto-assignment rules for new hires before invites are sent.',
+    },
+    {
+      label: 'System integration',
+      value: `${integrationReadiness.filter((item) => item.status === 'ready').length}/${integrationReadiness.length || 0} ready`,
+      body: 'Keep HR, LMS, email, and content-library handoffs visible before production writeback.',
+    },
+  ]
 
   return (
     <main className="reporting-view" aria-labelledby="reporting-title">
@@ -862,6 +887,25 @@ function WorkspaceHelper({ view, isAdmin }: { view: WorkspaceView; isAdmin: bool
             <span><strong>{dashboard.kpis.clearanceReady}</strong> clearance-ready</span>
             <span><strong>{dashboard.kpis.makeupRequired}</strong> need makeup</span>
             <span><strong>{dashboard.kpis.facilitatorRating.toFixed(1)}</strong> facilitator rating</span>
+          </section>
+
+          <section className="reporting-view__impact" aria-labelledby="reporting-impact-title">
+            <div className="reporting-view__section-heading">
+              <div>
+                <p className="app-hero__label">Client feedback covered</p>
+                <h2 id="reporting-impact-title">What a supervisor can do from here</h2>
+              </div>
+              <span>Demo-ready</span>
+            </div>
+            <div className="reporting-view__impact-grid">
+              {supervisorImpactCards.map((item) => (
+                <article key={item.label}>
+                  <small>{item.label}</small>
+                  <strong>{item.value}</strong>
+                  <p>{item.body}</p>
+                </article>
+              ))}
+            </div>
           </section>
 
           <section className="reporting-view__table" aria-labelledby="supervisor-actions-title">
@@ -1204,6 +1248,20 @@ function CurriculumStudio({
   const contentRequests = supervisorReport?.contentDevelopmentRequests ?? []
   const generatedPackages = supervisorReport?.generatedTrainingPackages ?? []
   const selectedPackage = generatedPackages.find((pkg) => pkg.id === selectedPackageId) || generatedPackages[0]
+  const pipelineStats = [
+    { label: 'Requests', value: contentRequests.length, detail: 'training needs captured' },
+    { label: 'AI drafts', value: generatedPackages.length, detail: 'packages in review' },
+    {
+      label: 'Review gates',
+      value: generatedPackages.filter((item) => item.reviewStatus === 'review-needed').length,
+      detail: 'waiting for human approval',
+    },
+    {
+      label: 'Published',
+      value: generatedPackages.filter((item) => item.reviewStatus === 'published').length,
+      detail: 'ready for rollout',
+    },
+  ]
 
   const deckProviders = useMemo(
     () => providers.filter((item): item is AiProviderStatus & { id: AiDeckProvider } =>
@@ -1379,6 +1437,41 @@ function CurriculumStudio({
             Unified suite to manually draft slides, request content deliveries through the intake pipeline, and review generated AI drafts with the detail inspector.
           </p>
         </div>
+
+        <section className="curriculum-command-center" aria-label="Curriculum Studio command center">
+          <div>
+            <p className="app-hero__label">Training team workflow</p>
+            <h2>Turn weekly requests into standardized training packages</h2>
+            <p>
+              Intake captures the need, source mapping keeps it grounded in approved artifacts, AI creates the first draft,
+              and human review controls what gets published.
+            </p>
+          </div>
+          <div className="curriculum-command-center__stats">
+            {pipelineStats.map((item) => (
+              <span key={item.label}>
+                <strong>{item.value}</strong>
+                {item.label}
+                <small>{item.detail}</small>
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <ol className="curriculum-workflow" aria-label="Curriculum development workflow">
+          <li data-active={activeTab === 'intake'}>
+            <strong>1. Capture request</strong>
+            <span>Behavior management, virtual make-up, or site-specific training need.</span>
+          </li>
+          <li data-active={activeTab === 'slide'}>
+            <strong>2. Draft package</strong>
+            <span>Generate editable deck, checks, practice lab, handout, and facilitator notes.</span>
+          </li>
+          <li data-active={activeTab === 'drafts'}>
+            <strong>3. Review gate</strong>
+            <span>Approve, reject, or publish only after source and training-owner review.</span>
+          </li>
+        </ol>
 
         <nav className="curriculum-tabs" aria-label="Curriculum Studio Sections" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '2px solid var(--tt-line)', paddingBottom: '0.25rem' }}>
           <button
@@ -1973,6 +2066,11 @@ function KnowledgeAssistantPanel({ sourceLibrary }: { sourceLibrary: SourceLibra
   const [answer, setAnswer] = useState<Awaited<ReturnType<typeof askKnowledgeAssistant>> | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const sampleQuestions = [
+    'What happens if a Site Lead misses a session?',
+    'What is the purpose of PBIS in Program Induction?',
+    'How should staff respond before correcting behavior?',
+  ]
 
   const handleAsk = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2002,6 +2100,13 @@ function KnowledgeAssistantPanel({ sourceLibrary }: { sourceLibrary: SourceLibra
           Question
           <textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
         </label>
+        <div className="assistant-prompts" aria-label="Suggested library questions">
+          {sampleQuestions.map((item) => (
+            <button key={item} className="button-secondary" type="button" onClick={() => setQuestion(item)}>
+              {item}
+            </button>
+          ))}
+        </div>
         <button disabled={loading || question.trim().length < 4} type="submit">
           {loading ? 'Checking sources' : 'Ask assistant'}
         </button>
@@ -2009,11 +2114,21 @@ function KnowledgeAssistantPanel({ sourceLibrary }: { sourceLibrary: SourceLibra
       {error ? <p role="alert">{error}</p> : null}
       {answer ? (
         <section className="assistant-answer" data-status={answer.status} aria-label="Assistant answer">
-          <div>
-            <strong>{answer.confidence}</strong>
+          <div className="assistant-answer__summary">
+            <span className="reporting-chip" data-status={answer.status === 'answered' ? 'ready' : 'needs_review'}>
+              {answer.confidence}
+            </span>
+            <h2>Direct answer</h2>
             <p>{answer.answer}</p>
+            {answer.status === 'answered' ? (
+              <ol>
+                <li>Use the answer as a first response, not final policy language.</li>
+                <li>Open the cited artifact before coaching, escalation, or clearance decisions.</li>
+                <li>Route weak or missing evidence to Program Training & Development.</li>
+              </ol>
+            ) : null}
           </div>
-          <div>
+          <div className="assistant-answer__sources">
             <h2>Source basis</h2>
             {answer.sourceBasis.length ? (
               <ul>
