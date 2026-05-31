@@ -146,6 +146,7 @@ describe('AdminDashboard', () => {
   it('renders management forms and calls supplied create handlers', async () => {
     const onCreateLearner = vi.fn()
     const onCreateCohort = vi.fn()
+    const onUpdateLearnerAssignment = vi.fn()
     const onCreateLearnerInvite = vi.fn(() => ({
       learnerId: 'learner-1',
       inviteStatus: 'pending' as const,
@@ -176,12 +177,14 @@ describe('AdminDashboard', () => {
             cohortId: 'cohort-1',
             cohortName: 'PIT May 2026',
             region: 'East',
+            supervisor: 'Regional Supervisor A',
             assignedPathIds: ['program-induction-pbis'],
             inviteStatus: 'not_invited',
           },
         ]}
         onCreateLearner={onCreateLearner}
         onCreateCohort={onCreateCohort}
+        onUpdateLearnerAssignment={onUpdateLearnerAssignment}
         onCreateLearnerInvite={onCreateLearnerInvite}
       />,
     )
@@ -210,6 +213,17 @@ describe('AdminDashboard', () => {
     expect(onCreateLearnerInvite).toHaveBeenCalledWith('learner-1')
     expect(await screen.findByText('Invite ready')).toBeInTheDocument()
     expect(screen.getByText('http://localhost:5173/?invite=invite-token-1')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit assignment' }))
+    expect(screen.getByRole('form', { name: 'Edit learner assignment' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Assignment supervisor'), { target: { value: 'Regional Supervisor B' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }))
+
+    expect(onUpdateLearnerAssignment).toHaveBeenCalledWith('learner-1', {
+      cohortId: 'cohort-1',
+      supervisor: 'Regional Supervisor B',
+      assignedPathIds: ['program-induction-pbis'],
+    })
   })
 
   it('renders cohort management from the dedicated cohorts view', () => {

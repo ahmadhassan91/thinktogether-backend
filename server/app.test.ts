@@ -132,6 +132,37 @@ describe.sequential('Think Together training API', () => {
       'jordan.lee@example.org',
     );
 
+    const assignment = await request(handle.app)
+      .put(`/api/admin/learners/${created.body.learner.id}/assignment`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        cohortId: 'cohort-pbis-mvp-1',
+        supervisor: 'Regional Supervisor B',
+        assignedPathIds: ['program-induction-pbis'],
+      })
+      .expect(200);
+
+    expect(assignment.body.learner).toEqual(
+      expect.objectContaining({
+        id: created.body.learner.id,
+        cohortId: 'cohort-pbis-mvp-1',
+        supervisor: 'Regional Supervisor B',
+        assignedPathIds: ['program-induction-pbis'],
+      }),
+    );
+
+    const supervisorReport = await request(handle.app)
+      .get('/api/admin/supervisor-report')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(supervisorReport.body.groups.supervisors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Regional Supervisor B',
+        }),
+      ]),
+    );
+
     const auditEvents = await request(handle.app)
       .get('/api/admin/audit-events')
       .set('Authorization', `Bearer ${token}`)
@@ -143,6 +174,12 @@ describe.sequential('Think Together training API', () => {
           entityType: 'learner',
           entityId: created.body.learner.id,
           metadata: expect.objectContaining({ email: 'jordan.lee@example.org' }),
+        }),
+        expect.objectContaining({
+          action: 'learner.assignment_updated',
+          entityType: 'learner',
+          entityId: created.body.learner.id,
+          metadata: expect.objectContaining({ supervisor: 'Regional Supervisor B' }),
         }),
       ]),
     );

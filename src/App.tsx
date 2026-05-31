@@ -49,6 +49,7 @@ import {
   scoreScenario,
   searchSourceIntelligence,
   submitTrainingSurvey,
+  updateAdminLearnerAssignment,
   updateContentDevelopmentRequestStatus,
   updateGeneratedTrainingPackageStatus,
   type AdminAuditEvent,
@@ -555,6 +556,19 @@ function App() {
               setSupervisorReport(supervisorReportPayload)
               setAdminAuditEvents(auditPayload.events)
             },
+            onUpdateLearnerAssignment: async (learnerId, assignment) => {
+              await updateAdminLearnerAssignment(learnerId, assignment)
+              const [learnersPayload, dashboardPayload, supervisorReportPayload, auditPayload] = await Promise.all([
+                getAdminLearners(),
+                getAdminDashboard(),
+                getAdminSupervisorReport(),
+                getAdminAuditEvents(),
+              ])
+              setAdminLearners(learnersPayload.learners)
+              setDashboard(dashboardPayload)
+              setSupervisorReport(supervisorReportPayload)
+              setAdminAuditEvents(auditPayload.events)
+            },
             onCreateLearnerInvite: async (learnerId) => {
               const invitePayload = await createLearnerInvite(learnerId)
               setAdminAuditEvents((await getAdminAuditEvents()).events)
@@ -617,6 +631,7 @@ function renderView({
   onAnswerKnowledgeCheck,
   onCreateLearner,
   onCreateCohort,
+  onUpdateLearnerAssignment,
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
@@ -648,6 +663,7 @@ function renderView({
   onAnswerKnowledgeCheck: (moduleId: string, answer: string) => Promise<void>
   onCreateLearner: Parameters<typeof AdminDashboard>[0]['onCreateLearner']
   onCreateCohort: Parameters<typeof AdminDashboard>[0]['onCreateCohort']
+  onUpdateLearnerAssignment: Parameters<typeof AdminDashboard>[0]['onUpdateLearnerAssignment']
   onCreateLearnerInvite: Parameters<typeof AdminDashboard>[0]['onCreateLearnerInvite']
   onRevokeLearnerInvite: Parameters<typeof AdminDashboard>[0]['onRevokeLearnerInvite']
   onDownloadExport: Parameters<typeof AdminDashboard>[0]['onDownloadExport']
@@ -683,6 +699,7 @@ function renderView({
         auditEvents={adminAuditEvents}
         onCreateLearner={onCreateLearner}
         onCreateCohort={onCreateCohort}
+        onUpdateLearnerAssignment={onUpdateLearnerAssignment}
         onCreateLearnerInvite={onCreateLearnerInvite}
         onRevokeLearnerInvite={onRevokeLearnerInvite}
         onDownloadExport={onDownloadExport}

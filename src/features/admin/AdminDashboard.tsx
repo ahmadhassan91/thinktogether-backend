@@ -14,6 +14,7 @@ import {
   type AdminDashboardPayload,
   type AdminExportKind,
   type AdminLearner,
+  type AdminLearnerAssignmentInput,
   type AdminLearnerInput,
   type LearnerInvite,
   type AutoAssignmentRule,
@@ -29,6 +30,7 @@ export type AdminDashboardProps = {
   auditEvents?: AdminAuditEvent[]
   onCreateLearner?: (learner: AdminLearnerInput) => Promise<void> | void
   onCreateCohort?: (cohort: AdminCohortInput) => Promise<void> | void
+  onUpdateLearnerAssignment?: (learnerId: string, assignment: AdminLearnerAssignmentInput) => Promise<void> | void
   onCreateLearnerInvite?: (learnerId: string) => Promise<LearnerInvite> | LearnerInvite
   onRevokeLearnerInvite?: (learnerId: string) => Promise<void> | void
   onDownloadExport?: (kind: AdminExportKind) => Promise<void> | void
@@ -84,6 +86,7 @@ export function AdminDashboard({
   auditEvents = [],
   onCreateLearner,
   onCreateCohort,
+  onUpdateLearnerAssignment,
   onCreateLearnerInvite,
   onRevokeLearnerInvite,
   onDownloadExport,
@@ -114,6 +117,14 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
   const [assignmentLoading, setAssignmentLoading] = useState(false)
   const [assignmentError, setAssignmentError] = useState('')
   const [assignmentRules, setAssignmentRules] = useState<AutoAssignmentRule[]>([])
+  const [editingLearnerId, setEditingLearnerId] = useState('')
+  const [assignmentForm, setAssignmentForm] = useState<AdminLearnerAssignmentInput>({
+    cohortId: '',
+    supervisor: '',
+    assignedPathIds: ['program-induction-pbis'],
+  })
+  const [assignmentSaving, setAssignmentSaving] = useState(false)
+  const [assignmentStatus, setAssignmentStatus] = useState('')
 
   useEffect(() => {
     if (mode === 'users') {
@@ -194,6 +205,7 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
         learner.lastName,
         learner.email,
         learner.cohortName,
+        learner.supervisor,
         learner.region,
         ...learner.assignedPathIds,
       ]
@@ -251,6 +263,33 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
       setInviteResult(null)
     } catch (caught) {
       setInviteError(caught instanceof Error ? caught.message : 'Unable to revoke invite.')
+    }
+  }
+
+  const startAssignmentEdit = (learner: AdminLearner) => {
+    setEditingLearnerId(learner.id)
+    setAssignmentStatus('')
+    setAssignmentForm({
+      cohortId: learner.cohortId,
+      supervisor: learner.supervisor ?? '',
+      assignedPathIds: learner.assignedPathIds.length ? [learner.assignedPathIds[0]] : ['program-induction-pbis'],
+    })
+  }
+
+  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingLearnerId || !onUpdateLearnerAssignment) return
+
+    setAssignmentSaving(true)
+    setAssignmentStatus('')
+    try {
+      await onUpdateLearnerAssignment(editingLearnerId, assignmentForm)
+      setAssignmentStatus('Assignment updated. Supervisor Center and digest exports will use this supervisor.')
+      setEditingLearnerId('')
+    } catch (caught) {
+      setAssignmentStatus(caught instanceof Error ? caught.message : 'Unable to update learner assignment.')
+    } finally {
+      setAssignmentSaving(false)
     }
   }
 
@@ -597,7 +636,7 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
           </h2>
           <p style={{ color: '#657184', margin: '-0.35rem 0 0.9rem', maxWidth: 760 }}>
             {showUsers
-              ? 'Create learner records, connect them to a cohort and supervisor, then generate invite links when the roster is ready.'
+              ? 'Create learner records, assign cohort + supervisor + path, then generate invite links when the roster is ready.'
               : 'Set the session name, region, primary facilitator, learning path, and start time without needing to paste raw system IDs.'}
           </p>
 
@@ -852,6 +891,25 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
             <div style={{ marginTop: '1rem' }}>
               <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Managed learners</h3>
               <div
+                aria-label="Supervisor assignment workflow"
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  color: '#475569',
+                  display: 'grid',
+                  gap: '0.35rem',
+                  marginBottom: '0.85rem',
+                  padding: '0.8rem',
+                }}
+              >
+                <strong style={{ color: '#1f2937' }}>Supervisor assignment happens on the learner record</strong>
+                <span>
+                  Add or edit a learner, choose their cohort and learning path, then enter the supervisor name. Reporting groups,
+                  supervisor digest CSVs, make-up queues, and completion notices all read from this saved supervisor field.
+                </span>
+              </div>
+              <div
                 aria-label="Managed learner filters"
                 style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginBottom: '0.75rem' }}
               >
@@ -954,6 +1012,11 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
                                 Revoke invite
                               </button>
                             ) : null}
+                            {onUpdateLearnerAssignment ? (
+                              <button onClick={() => startAssignmentEdit(learner)} type="button">
+                                Edit assignment
+                              </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -977,6 +1040,83 @@ Alex,Chen,alex.chen@thinktogether.local,EMP-1044,Instructional Aide,Emerging Reg
                 </div>
               ) : null}
               {inviteError ? <p role="alert">{inviteError}</p> : null}
+              {editingLearnerId ? (
+                <form
+                  aria-label="Edit learner assignment"
+                  onSubmit={handleAssignmentSubmit}
+                  style={{
+                    background: '#fffbeb',
+                    border: '1px solid #fbbf24',
+                    borderRadius: 8,
+                    display: 'grid',
+                    gap: '0.75rem',
+                    marginTop: '1rem',
+                    padding: '1rem',
+                  }}
+                >
+                  <div>
+                    <h4 style={{ fontSize: '1rem', margin: 0 }}>Edit learner assignment</h4>
+                    <p style={{ color: '#92400e', margin: '0.25rem 0 0' }}>
+                      This updates the learner roster, participant cohort row, Supervisor Center grouping, and export digest ownership.
+                    </p>
+                  </div>
+                  <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                    <label>
+                      Cohort
+                      <select
+                        aria-label="Assignment cohort"
+                        onChange={(event) => setAssignmentForm({ ...assignmentForm, cohortId: event.target.value })}
+                        required
+                        style={{ display: 'block', marginTop: '0.25rem', width: '100%' }}
+                        value={assignmentForm.cohortId}
+                      >
+                        {managementCohorts.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Supervisor
+                      <input
+                        aria-label="Assignment supervisor"
+                        onChange={(event) => setAssignmentForm({ ...assignmentForm, supervisor: event.target.value })}
+                        placeholder="Regional Supervisor A"
+                        style={{ display: 'block', marginTop: '0.25rem', width: '100%' }}
+                        value={assignmentForm.supervisor ?? ''}
+                      />
+                    </label>
+                    <label>
+                      Learning path
+                      <select
+                        aria-label="Assignment learning path"
+                        onChange={(event) =>
+                          setAssignmentForm({ ...assignmentForm, assignedPathIds: event.target.value ? [event.target.value] : [] })
+                        }
+                        required
+                        style={{ display: 'block', marginTop: '0.25rem', width: '100%' }}
+                        value={assignmentForm.assignedPathIds[0] ?? ''}
+                      >
+                        {learningPathOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <button disabled={assignmentSaving} type="submit">
+                      {assignmentSaving ? 'Saving assignment...' : 'Save assignment'}
+                    </button>
+                    <button onClick={() => setEditingLearnerId('')} type="button">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+              {assignmentStatus ? <p aria-live="polite">{assignmentStatus}</p> : null}
             </div>
           ) : showUsers && subTab === 'roster' ? (
             <p style={{ color: '#657184', margin: '1rem 0 0' }}>

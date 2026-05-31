@@ -20,6 +20,7 @@ import {
   revokeLearnerInvite,
   storeToken,
   submitTrainingSurvey,
+  updateAdminLearnerAssignment,
   updateAdminNotificationStatus,
   updateGeneratedTrainingPackageStatus,
 } from './client'
@@ -78,6 +79,7 @@ describe('admin management client', () => {
     fetchMock
       .mockResolvedValueOnce(json({ learner: { id: 'learner-1', firstName: 'Noah', lastName: 'Kim' } }))
       .mockResolvedValueOnce(json({ cohort: { id: 'cohort-1', name: 'NHO June 2026' } }))
+      .mockResolvedValueOnce(json({ learner: { id: 'learner-1', supervisor: 'Regional Supervisor B' } }))
 
     await createAdminLearner({
       firstName: 'Noah',
@@ -93,9 +95,15 @@ describe('admin management client', () => {
       facilitatorIds: ['facilitator-2'],
       pathIds: ['program-induction-pbis'],
     })
+    await updateAdminLearnerAssignment('learner-1', {
+      cohortId: 'cohort-1',
+      supervisor: 'Regional Supervisor B',
+      assignedPathIds: ['program-induction-pbis'],
+    })
 
     const learnerInit = fetchMock.mock.calls[0][1] as RequestInit
     const cohortInit = fetchMock.mock.calls[1][1] as RequestInit
+    const assignmentInit = fetchMock.mock.calls[2][1] as RequestInit
 
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/learners')
     expect(learnerInit.method).toBe('POST')
@@ -118,6 +126,15 @@ describe('admin management client', () => {
       pathIds: ['program-induction-pbis'],
     }))
     expect((cohortInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
+
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/admin/learners/learner-1/assignment')
+    expect(assignmentInit.method).toBe('PUT')
+    expect(assignmentInit.body).toBe(JSON.stringify({
+      cohortId: 'cohort-1',
+      supervisor: 'Regional Supervisor B',
+      assignedPathIds: ['program-induction-pbis'],
+    }))
+    expect((assignmentInit.headers as Headers).get('authorization')).toBe('Bearer admin-token')
   })
 
   it('posts learner invite requests with auth headers', async () => {

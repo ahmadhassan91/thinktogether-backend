@@ -373,6 +373,12 @@ export type AdminLearnerInput = {
   assignedPathIds: string[]
 }
 
+export type AdminLearnerAssignmentInput = {
+  cohortId: string
+  supervisor?: string
+  assignedPathIds: string[]
+}
+
 export type AdminCohort = {
   id: string
   name: string
@@ -774,6 +780,13 @@ export async function createAdminLearner(learner: AdminLearnerInput) {
   return request<{ learner: AdminLearner }>('/api/admin/learners', {
     method: 'POST',
     body: JSON.stringify(learner),
+  })
+}
+
+export async function updateAdminLearnerAssignment(learnerId: string, assignment: AdminLearnerAssignmentInput) {
+  return request<{ learner: AdminLearner }>(`/api/admin/learners/${encodeURIComponent(learnerId)}/assignment`, {
+    method: 'PUT',
+    body: JSON.stringify(assignment),
   })
 }
 

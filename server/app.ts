@@ -117,6 +117,12 @@ const adminCreateLearnerSchema = z.object({
   assignedPathIds: z.array(z.string().trim().min(1)).min(1),
 });
 
+const adminUpdateLearnerAssignmentSchema = z.object({
+  cohortId: z.string().trim().min(1),
+  supervisor: z.string().trim().max(160).optional().default(''),
+  assignedPathIds: z.array(z.string().trim().min(1)).min(1),
+});
+
 const adminCreateCohortSchema = z.object({
   name: z.string().trim().min(1).max(120),
   region: z.string().trim().min(1).max(120),
@@ -859,6 +865,48 @@ export async function createApp(options: AppOptions): Promise<AppHandle> {
         assignedPathIds: payload.assignedPathIds,
       },
     });
+  });
+
+  app.put('/api/admin/learners/:learnerId/assignment', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
+    const payload = adminUpdateLearnerAssignmentSchema.parse(req.body);
+    const learnerId = String(req.params.learnerId);
+    const cohort = await readAdminCohort(db, payload.cohortId);
+    if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
+
+    const existingLearner = await db.query('SELECT id, email FROM learners WHERE id = $1', [learnerId]);
+    if (!existingLearner.rows[0]) return res.status(404).json({ error: 'Learner not found' });
+
+    await db.transaction(async (client) => {
+      await client.query(
+        `UPDATE learners
+         SET cohort_id = $1, supervisor = $2, assigned_path_ids = $3
+         WHERE id = $4`,
+        [
+          payload.cohortId,
+          payload.supervisor || null,
+          JSON.stringify(payload.assignedPathIds),
+          learnerId,
+        ],
+      );
+
+      await client.query('DELETE FROM participants WHERE learner_id = $1', [learnerId]);
+      await client.query(
+        `INSERT INTO participants (id, cohort_id, learner_id, role, joined_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (cohort_id, learner_id) DO NOTHING`,
+        [randomUUID(), payload.cohortId, learnerId, 'learner', new Date().toISOString()],
+      );
+    });
+
+    await recordAuditEvent(db, req.user, 'learner.assignment_updated', 'learner', learnerId, {
+      email: existingLearner.rows[0].email,
+      cohortId: payload.cohortId,
+      supervisor: payload.supervisor || null,
+      assignedPathIds: payload.assignedPathIds,
+    });
+
+    const learner = await readAdminLearner(db, learnerId);
+    res.json({ learner });
   });
 
   app.post('/api/admin/learners/:learnerId/invite', authenticate, requireAdmin, async (req: AuthedRequest, res) => {
@@ -2898,7 +2946,7 @@ function sendCsv(res: Response, filename: string, rows: Array<Record<string, unk
   res.send(toCsv(rows, headers));
 }
 
-function adminLearnersQuery() {
+function adminLearnersQuery(whereClause = '') {
   return `SELECT l.id, l.first_name, l.last_name, l.email, l.cohort_id, l.supervisor, l.assigned_path_ids,
                  c.name AS cohort_name, c.region,
                  CASE
@@ -2934,6 +2982,7 @@ function adminLearnersQuery() {
             ORDER BY expires_at DESC
             LIMIT 1
           ) expired_invite ON true
+          ${whereClause}
           ORDER BY l.last_name, l.first_name`;
 }
 
@@ -2949,6 +2998,12 @@ function adminCohortsQuery() {
 async function readAdminCohort(db: AppDatabase, cohortId: string) {
   const result = await db.query('SELECT id, name, region FROM cohorts WHERE id = $1', [cohortId]);
   return result.rows[0] as Pick<AdminCohortRow, 'id' | 'name' | 'region'> | undefined;
+}
+
+async function readAdminLearner(db: AppDatabase, learnerId: string) {
+  const result = await db.query(adminLearnersQuery('WHERE l.id = $1'), [learnerId]);
+  const row = result.rows[0] as AdminLearnerRow | undefined;
+  return row ? mapAdminLearner(row) : undefined;
 }
 
 function mapAdminLearner(row: AdminLearnerRow) {
